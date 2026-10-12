@@ -91,7 +91,7 @@ function makeRateLimiter(limit) {
 export function createServer(options = {}) {
   loadEnv(options.envFile);
   const port = Number(options.port ?? process.env.API_PORT ?? 4001);
-  const host = options.host ?? process.env.API_HOST ?? "0.0.0.0";
+  const host = options.host ?? process.env.API_HOST ?? "127.0.0.1";
   const dbPath = options.dbPath ?? process.env.API_DB_PATH ?? path.join(here, "data", "api.sqlite");
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
   const db = new Database(dbPath);

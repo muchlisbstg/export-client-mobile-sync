@@ -12,7 +12,9 @@ cp .env.api.example .env.api
 npm run dev:api
 ```
 
-API mendengarkan `0.0.0.0:4001` (ubah `API_PORT` bila perlu) dan membuat SQLite lokal di `server/data/api.sqlite`. Katalog berisi produk demo. Jangan memasukkan data klien nyata. File `.env.api` hanya untuk server dan tidak dibundle ke Expo.
+API secara default mengikat ke loopback (`127.0.0.1:4001`) dan membuat SQLite lokal di `server/data/api.sqlite`. Katalog berisi produk demo. Jangan memasukkan data klien nyata. File `.env.api` hanya untuk server dan tidak dibundle ke Expo.
+
+Untuk Android Emulator gunakan alamat API `http://10.0.2.2:4001` dari aplikasi. Untuk iOS Simulator gunakan `http://127.0.0.1:4001`. Untuk perangkat fisik, set `API_HOST=0.0.0.0` di `.env.api` agar API dapat dijangkau melalui LAN, lalu atur `EXPO_PUBLIC_API_URL` ke IP LAN komputer. Aktifkan ini hanya pada jaringan tepercaya dan batasi firewall ke port yang diperlukan.
 
 Endpoint standar:
 
@@ -30,9 +32,7 @@ cp .env.example .env
 npm start
 ```
 
-Default aplikasi adalah `http://10.0.2.2:4001` pada Android Emulator dan `http://127.0.0.1:4001` pada iOS Simulator. Untuk perangkat fisik, set `EXPO_PUBLIC_API_URL` ke IP LAN komputer, misalnya `http://192.168.1.10:4001`. `EXPO_PUBLIC_*` tertanam di bundle aplikasi; alamat API boleh publik, tetapi **jangan pernah menaruh token atau secret di sana**.
-
-Komputer dan perangkat harus saling menjangkau. Buka firewall hanya untuk port API yang diperlukan dan jaringan tepercaya. Untuk jaringan non-local, gunakan reverse proxy/TLS (`https://`) dan jangan mengirim secret melalui HTTP biasa.
+`EXPO_PUBLIC_*` tertanam di bundle aplikasi; alamat API boleh publik, tetapi **jangan pernah menaruh token atau secret di sana**. Untuk jaringan non-local, gunakan reverse proxy/TLS (`https://`) dan jangan mengirim secret melalui HTTP biasa.
 
 ## Peer sync (opsional)
 
