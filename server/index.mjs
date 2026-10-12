@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import { createSupabaseAuth } from "./auth.mjs";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -253,6 +254,19 @@ export function createServer(options = {}) {
       flushing = false;
     }
   }
+
+  const auth = createSupabaseAuth({
+    url: options.supabaseUrl, anonKey: options.supabaseAnonKey,
+    adminUserIds: options.adminUserIds, fetcher: options.authFetcher,
+  });
+  app.get("/api/v1/auth/session", auth.authenticate, (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ user: res.locals.authIdentity });
+  });
+  app.get("/api/v1/admin/session", auth.authenticate, auth.requireAdmin, (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ ok: true, user: res.locals.authIdentity });
+  });
 
   app.get("/health", (_req, res) => {
     db.prepare("SELECT 1").get();
