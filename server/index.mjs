@@ -156,6 +156,7 @@ export function createServer(options = {}) {
   app.use(express.json({ limit: "16kb" }));
   const createLimiter = makeRateLimiter(Number(process.env.RFQ_LIMIT_PER_15M) || 10);
   const trackLimiter = makeRateLimiter(Number(process.env.TRACK_LOOKUP_LIMIT_PER_15M) || 60);
+  const authLimiter = makeRateLimiter(Number(process.env.AUTH_LIMIT_PER_15M) || 120);
 
   const selectRecord = `SELECT id, tracking_code AS trackingCode, customer_name AS customerName,
     customer_email AS customerEmail, destination_country AS destinationCountry,
@@ -259,11 +260,11 @@ export function createServer(options = {}) {
     url: options.supabaseUrl, anonKey: options.supabaseAnonKey,
     adminUserIds: options.adminUserIds, fetcher: options.authFetcher,
   });
-  app.get("/api/v1/auth/session", auth.authenticate, (_req, res) => {
+  app.get("/api/v1/auth/session", authLimiter, auth.authenticate, (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ user: res.locals.authIdentity });
   });
-  app.get("/api/v1/admin/session", auth.authenticate, auth.requireAdmin, (_req, res) => {
+  app.get("/api/v1/admin/session", authLimiter, auth.authenticate, auth.requireAdmin, (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ ok: true, user: res.locals.authIdentity });
   });
