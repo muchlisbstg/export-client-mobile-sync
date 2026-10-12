@@ -346,6 +346,19 @@ export default function App() {
           <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>API</Text></View>
         </View>
 
+        <View style={[styles.card, { padding: 14, marginTop: 10 }]}>
+          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login admin" : "Login admin"}</Text></Pressable>
+          {showAuthPanel && <>
+            {authAccessToken ? <Text accessibilityRole="text" style={{ marginTop: 8 }}>Sesi aktif · peran: {authRole}</Text> : null}
+            <Field label="Email" value={authEmail} onChangeText={setAuthEmail} placeholder="email@perusahaan.com" keyboardType="email-address" autoCapitalize="none" />
+            <Field label="Password" value={authPassword} onChangeText={setAuthPassword} placeholder="Password" autoCapitalize="none" />
+            <Pressable accessibilityRole="button" disabled={authBusy} onPress={() => void signInAdmin()} style={{ backgroundColor: colors.green, padding: 12, borderRadius: 10, marginTop: 8 }}><Text style={{ color: colors.white, fontWeight: "800", textAlign: "center" }}>{authBusy ? "Memeriksa…" : "Masuk"}</Text></Pressable>
+            {authAccessToken ? <Pressable onPress={() => { setAuthAccessToken(""); setAuthRole(""); setAuthMessage("Sesi dihapus dari memori."); }} style={{ padding: 10 }}><Text style={{ color: colors.green }}>Keluar</Text></Pressable> : null}
+            {authMessage ? <Text accessibilityRole="text" style={{ color: colors.muted, marginTop: 8 }}>{authMessage}</Text> : null}
+            <Text style={{ color: colors.muted, fontSize: 11, marginTop: 6 }}>Token hanya disimpan di memori. Backend tetap memutuskan akses admin.</Text>
+          </>}
+        </View>
+
         <View style={styles.hero}>
           <Text style={styles.heroKicker}>PERMINTAAN EKSPOR, LEBIH TERHUBUNG.</Text>
           <Text style={styles.heroTitle}>Satu permintaan.{"\n"}<Text style={styles.heroAccent}>Lintas perangkat.</Text></Text>
