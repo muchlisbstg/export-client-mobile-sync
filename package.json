@@ -9,7 +9,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test test/api.test.mjs test/server.test.mjs test/catalog-filter.test.mjs test/catalog-compare.test.mjs test/catalog-csv.test.mjs test/catalog-share.test.mjs test/rfq-validation.test.mjs"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test test/api.test.mjs test/server.test.mjs test/catalog-filter.test.mjs test/catalog-compare.test.mjs test/catalog-csv.test.mjs test/catalog-share.test.mjs test/rfq-validation.test.mjs test/auth.test.mjs"
   },
   "overrides": {
     "uuid": "^11.1.1"

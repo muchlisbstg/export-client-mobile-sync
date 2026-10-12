@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { createInquiry, getHealth, getProducts, trackInquiry, type InquiryStatus, type Product, type SyncStatus } from "./src/api";
+import { API_BASE_URL, createInquiry, getHealth, getProducts, trackInquiry, type InquiryStatus, type Product, type SyncStatus } from "./src/api";
 import { catalogSortOptions, filterProducts, getActiveCatalogFilters, getCatalogSearchHighlightParts, getCategories, getFacetCounts, getOrigins, getUnits, sortProducts, type CatalogSortDirection, type CatalogSortField } from "./src/catalog-filter";
 import { formatComparisonCsv, formatComparisonShare, getComparisonFieldsToDisplay, getDifferingComparisonFields, MAX_COMPARE_PRODUCTS, toggleCompareSelection, type ComparisonField } from "./src/catalog-compare";
 import { validateInquiryField, validateInquiryForm, type InquiryField, type InquiryFieldErrors } from "./src/rfq-validation";
@@ -82,6 +82,13 @@ export default function App() {
   const [trackingCodeNotice, setTrackingCodeNotice] = useState("");
   const [trackingInput, setTrackingInput] = useState("");
   const [trackedInquiry, setTrackedInquiry] = useState<InquiryStatus | null>(null);
+  const [showAuthPanel, setShowAuthPanel] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authAccessToken, setAuthAccessToken] = useState("");
+  const [authRole, setAuthRole] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogCategory, setCatalogCategory] = useState("");
   const [catalogOrigin, setCatalogOrigin] = useState("");
@@ -96,6 +103,31 @@ export default function App() {
   const [comparisonShareNotice, setComparisonShareNotice] = useState("");
   const [comparisonCsvNotice, setComparisonCsvNotice] = useState("");
   const catalogSearchRef = useRef<TextInput>(null);
+
+  async function signInAdmin() {
+    const authUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim();
+    if (!authUrl || !anonKey) { setAuthMessage("Login belum dikonfigurasi. Isi EXPO_PUBLIC_SUPABASE_URL dan EXPO_PUBLIC_SUPABASE_ANON_KEY."); return; }
+    setAuthBusy(true); setAuthMessage("");
+    try {
+      const login = await fetch(`${authUrl.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
+        method: "POST", headers: { "Content-Type": "application/json", apikey: anonKey },
+        body: JSON.stringify({ email: authEmail.trim(), password: authPassword }),
+      });
+      const loginBody = await login.json().catch(() => ({}));
+      if (!login.ok || !loginBody.access_token) throw new Error(loginBody.error_description || loginBody.msg || "Login gagal.");
+      const session = await fetch(`${API_BASE_URL}/api/v1/auth/session`, { headers: { Authorization: `Bearer ${loginBody.access_token}` } });
+      const sessionBody = await session.json().catch(() => ({}));
+      if (!session.ok || !sessionBody.user) throw new Error(sessionBody.error || "Backend menolak sesi.");
+      setAuthAccessToken(loginBody.access_token); setAuthRole(sessionBody.user.role); setAuthPassword("");
+      if (sessionBody.user.role === "admin") {
+        const admin = await fetch(`${API_BASE_URL}/api/v1/admin/session`, { headers: { Authorization: `Bearer ${loginBody.access_token}` } });
+        if (!admin.ok) throw new Error("Backend tidak mengizinkan peran admin.");
+        setAuthMessage("Sesi admin diverifikasi oleh backend.");
+      } else setAuthMessage("Login berhasil, tetapi akun ini tidak memiliki peran admin.");
+    } catch (caught) { setAuthAccessToken(""); setAuthRole(""); setAuthMessage(caught instanceof Error ? caught.message : "Login gagal."); }
+    finally { setAuthBusy(false); }
+  }
 
   async function loadProducts() {
     setLoading(true);
@@ -312,6 +344,19 @@ export default function App() {
           <View style={styles.brandMark}><Text style={styles.brandInitial}>E</Text></View>
           <View style={styles.brandText}><Text style={styles.brandName}>ExportClient</Text><Text style={styles.brandCaption}>PORTAL KLIEN EKSPOR</Text></View>
           <View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>API</Text></View>
+        </View>
+
+        <View style={[styles.card, { padding: 14, marginTop: 10 }]}>
+          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login admin" : "Login admin"}</Text></Pressable>
+          {showAuthPanel && <>
+            {authAccessToken ? <Text accessibilityRole="text" style={{ marginTop: 8 }}>Sesi aktif · peran: {authRole}</Text> : null}
+            <Field label="Email" value={authEmail} onChangeText={setAuthEmail} placeholder="email@perusahaan.com" keyboardType="email-address" autoCapitalize="none" />
+            <Field label="Password" value={authPassword} onChangeText={setAuthPassword} placeholder="Password" autoCapitalize="none" />
+            <Pressable accessibilityRole="button" disabled={authBusy} onPress={() => void signInAdmin()} style={{ backgroundColor: colors.green, padding: 12, borderRadius: 10, marginTop: 8 }}><Text style={{ color: colors.white, fontWeight: "800", textAlign: "center" }}>{authBusy ? "Memeriksa…" : "Masuk"}</Text></Pressable>
+            {authAccessToken ? <Pressable onPress={() => { setAuthAccessToken(""); setAuthRole(""); setAuthMessage("Sesi dihapus dari memori."); }} style={{ padding: 10 }}><Text style={{ color: colors.green }}>Keluar</Text></Pressable> : null}
+            {authMessage ? <Text accessibilityRole="text" style={{ color: colors.muted, marginTop: 8 }}>{authMessage}</Text> : null}
+            <Text style={{ color: colors.muted, fontSize: 11, marginTop: 6 }}>Token hanya disimpan di memori. Backend tetap memutuskan akses admin.</Text>
+          </>}
         </View>
 
         <View style={styles.hero}>
