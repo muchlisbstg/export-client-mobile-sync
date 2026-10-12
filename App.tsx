@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { createInquiry, getHealth, getProducts, trackInquiry, type InquiryStatus, type Product, type SyncStatus } from "./src/api";
+import { API_BASE_URL, createInquiry, getHealth, getProducts, trackInquiry, type InquiryStatus, type Product, type SyncStatus } from "./src/api";
 import { catalogSortOptions, filterProducts, getActiveCatalogFilters, getCatalogSearchHighlightParts, getCategories, getFacetCounts, getOrigins, getUnits, sortProducts, type CatalogSortDirection, type CatalogSortField } from "./src/catalog-filter";
 import { formatComparisonCsv, formatComparisonShare, getComparisonFieldsToDisplay, getDifferingComparisonFields, MAX_COMPARE_PRODUCTS, toggleCompareSelection, type ComparisonField } from "./src/catalog-compare";
 import { validateInquiryField, validateInquiryForm, type InquiryField, type InquiryFieldErrors } from "./src/rfq-validation";
@@ -110,7 +110,7 @@ export default function App() {
     if (!authUrl || !anonKey) { setAuthMessage("Login belum dikonfigurasi. Isi EXPO_PUBLIC_SUPABASE_URL dan EXPO_PUBLIC_SUPABASE_ANON_KEY."); return; }
     setAuthBusy(true); setAuthMessage("");
     try {
-      const login = await fetch(`${authUrl.replace(/\\/+$/, "")}/auth/v1/token?grant_type=password`, {
+      const login = await fetch(`${authUrl.replace(/\/+$/, "")}/auth/v1/token?grant_type=password`, {
         method: "POST", headers: { "Content-Type": "application/json", apikey: anonKey },
         body: JSON.stringify({ email: authEmail.trim(), password: authPassword }),
       });
