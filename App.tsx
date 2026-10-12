@@ -82,6 +82,13 @@ export default function App() {
   const [trackingCodeNotice, setTrackingCodeNotice] = useState("");
   const [trackingInput, setTrackingInput] = useState("");
   const [trackedInquiry, setTrackedInquiry] = useState<InquiryStatus | null>(null);
+  const [showAuthPanel, setShowAuthPanel] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authAccessToken, setAuthAccessToken] = useState("");
+  const [authRole, setAuthRole] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogCategory, setCatalogCategory] = useState("");
   const [catalogOrigin, setCatalogOrigin] = useState("");
@@ -96,6 +103,31 @@ export default function App() {
   const [comparisonShareNotice, setComparisonShareNotice] = useState("");
   const [comparisonCsvNotice, setComparisonCsvNotice] = useState("");
   const catalogSearchRef = useRef<TextInput>(null);
+
+  async function signInAdmin() {
+    const authUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim();
+    if (!authUrl || !anonKey) { setAuthMessage("Login belum dikonfigurasi. Isi EXPO_PUBLIC_SUPABASE_URL dan EXPO_PUBLIC_SUPABASE_ANON_KEY."); return; }
+    setAuthBusy(true); setAuthMessage("");
+    try {
+      const login = await fetch(`${authUrl.replace(/\\/+$/, "")}/auth/v1/token?grant_type=password`, {
+        method: "POST", headers: { "Content-Type": "application/json", apikey: anonKey },
+        body: JSON.stringify({ email: authEmail.trim(), password: authPassword }),
+      });
+      const loginBody = await login.json().catch(() => ({}));
+      if (!login.ok || !loginBody.access_token) throw new Error(loginBody.error_description || loginBody.msg || "Login gagal.");
+      const session = await fetch(`${API_BASE_URL}/api/v1/auth/session`, { headers: { Authorization: `Bearer ${loginBody.access_token}` } });
+      const sessionBody = await session.json().catch(() => ({}));
+      if (!session.ok || !sessionBody.user) throw new Error(sessionBody.error || "Backend menolak sesi.");
+      setAuthAccessToken(loginBody.access_token); setAuthRole(sessionBody.user.role); setAuthPassword("");
+      if (sessionBody.user.role === "admin") {
+        const admin = await fetch(`${API_BASE_URL}/api/v1/admin/session`, { headers: { Authorization: `Bearer ${loginBody.access_token}` } });
+        if (!admin.ok) throw new Error("Backend tidak mengizinkan peran admin.");
+        setAuthMessage("Sesi admin diverifikasi oleh backend.");
+      } else setAuthMessage("Login berhasil, tetapi akun ini tidak memiliki peran admin.");
+    } catch (caught) { setAuthAccessToken(""); setAuthRole(""); setAuthMessage(caught instanceof Error ? caught.message : "Login gagal."); }
+    finally { setAuthBusy(false); }
+  }
 
   async function loadProducts() {
     setLoading(true);
