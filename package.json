@@ -18,7 +18,7 @@
     "better-sqlite3": "^13.0.3",
     "expo": "^57.0.27",
     "express": "^5.2.1",
-    "react": "19.3.0",
+    "react": "19.3.1",
     "react-native": "0.87.1"
   },
   "devDependencies": {
