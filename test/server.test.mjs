@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer, parsePeers } from "../server/index.mjs";
+import { migrateTenantIsolation } from "../scripts/migrate-tenant-isolation.mjs";
 
 const tempDirs = [];
 const services = [];
@@ -24,10 +25,14 @@ async function freePort() {
   return port;
 }
 
-async function boot({ nodeId = "mobile-off", port = 0, syncSecret = "", syncPeers = "" } = {}) {
+async function boot({ nodeId = "mobile-off", port = 0, syncSecret = "", syncPeers = "", supabaseUrl = "https://auth.example.test", supabaseAnonKey = "test-anon-key", authFetcher = async (_url, init) => {
+  const token = init.headers.Authorization.replace(/^Bearer /, "");
+  const ids = { "buyer-token": "buyer-admin", "seller-token": "seller-admin", "member-token": "buyer-member", "outsider-token": "outsider" };
+  return new Response(JSON.stringify({ id: ids[token] ?? "unknown-user" }), { status: token === "expired" ? 401 : 200 });
+} } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "export-mobile-api-"));
   tempDirs.push(directory);
-  const service = createServer({ host: "127.0.0.1", port, nodeId, syncSecret, syncPeers, dbPath: path.join(directory, "api.sqlite") });
+  const service = createServer({ host: "127.0.0.1", port, nodeId, syncSecret, syncPeers, supabaseUrl, supabaseAnonKey, authFetcher, dbPath: path.join(directory, "api.sqlite") });
   const started = await service.start();
   services.push(service);
   return { service, base: `http://127.0.0.1:${started.port}` };
@@ -277,4 +282,68 @@ test("peer replication is idempotent and conflicts never overwrite stored data",
   const syncStatus = await (await fetch(`${nodeB.base}/health`)).json();
   assert.equal(syncStatus.syncStatus.conflicts, 2);
   assert.equal(syncStatus.syncStatus.pendingDeliveries, 0);
+});
+
+
+test("tenant transaction reads and writes are scoped to verified active membership and role", async () => {
+  const { base, service } = await boot();
+  try {
+    migrateTenantIsolation(service.db);
+    const db = service.db;
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-a","buyer","Buyer A",new Date().toISOString());
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("seller-a","seller","Seller A",new Date().toISOString());
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-b","buyer","Buyer B",new Date().toISOString());
+    const membership = db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)");
+    membership.run("buyer-a","buyer-admin","buyer_admin",new Date().toISOString());
+    membership.run("buyer-a","buyer-member","buyer_member",new Date().toISOString());
+    membership.run("seller-a","seller-admin","seller_admin",new Date().toISOString());
+    membership.run("buyer-b","outsider","buyer_admin",new Date().toISOString());
+
+    const headers = (token, tenantId) => ({ authorization: `Bearer ${token}`, "x-active-tenant-id": tenantId, "content-type": "application/json" });
+    const unauthenticated = await fetch(`${base}/api/v1/transactions`, { headers: { "x-active-tenant-id": "buyer-a" } });
+    assert.equal(unauthenticated.status, 401);
+
+    const noTenant = await fetch(`${base}/api/v1/transactions`, { headers: { authorization: "Bearer buyer-token" } });
+    assert.equal(noTenant.status, 400);
+
+    const createdResponse = await fetch(`${base}/api/v1/transactions`, {
+      method: "POST", headers: headers("buyer-token","buyer-a"),
+      body: JSON.stringify({ buyerTenantId: "buyer-b", sellerTenantId: "seller-a" }),
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = (await createdResponse.json()).data;
+    assert.equal(created.buyerTenantId, "buyer-a", "buyer tenant comes from verified membership, never request body");
+
+    const buyerList = await fetch(`${base}/api/v1/transactions`, { headers: headers("buyer-token","buyer-a") });
+    assert.equal((await buyerList.json()).data.length, 1);
+    const wrongTenant = await fetch(`${base}/api/v1/transactions/${created.id}`, { headers: headers("outsider-token","buyer-b") });
+    assert.equal(wrongTenant.status, 404);
+    const forgedTenant = await fetch(`${base}/api/v1/transactions`, { headers: headers("outsider-token","buyer-a") });
+    assert.equal(forgedTenant.status, 403);
+
+    const buyerMemberWrite = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
+      method: "PATCH", headers: headers("member-token","buyer-a"), body: JSON.stringify({ status: "cancelled" }),
+    });
+    assert.equal(buyerMemberWrite.status, 403);
+
+    const sellerAccept = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
+      method: "PATCH", headers: headers("seller-token","seller-a"), body: JSON.stringify({ status: "accepted" }),
+    });
+    assert.equal(sellerAccept.status, 200);
+    const sellerFulfill = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
+      method: "PATCH", headers: headers("seller-token","seller-a"), body: JSON.stringify({ status: "fulfilled" }),
+    });
+    assert.equal(sellerFulfill.status, 200);
+
+    const sellerCannotCreate = await fetch(`${base}/api/v1/transactions`, {
+      method: "POST", headers: headers("seller-token","seller-a"), body: JSON.stringify({ sellerTenantId: "seller-a" }),
+    });
+    assert.equal(sellerCannotCreate.status, 403);
+    const fulfilledCannotBeCancelled = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
+      method: "PATCH", headers: headers("buyer-token","buyer-a"), body: JSON.stringify({ status: "cancelled" }),
+    });
+    assert.equal(fulfilledCannotBeCancelled.status, 403);
+  } finally {
+    await service.close();
+  }
 });
