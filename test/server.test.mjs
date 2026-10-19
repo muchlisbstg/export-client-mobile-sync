@@ -290,14 +290,14 @@ test("tenant transaction reads and writes are scoped to verified active membersh
   try {
     migrateTenantIsolation(service.db);
     const db = service.db;
-    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-a","buyer","Buyer A",now());
-    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("seller-a","seller","Seller A",now());
-    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-b","buyer","Buyer B",now());
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-a","buyer","Buyer A",new Date().toISOString());
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("seller-a","seller","Seller A",new Date().toISOString());
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-b","buyer","Buyer B",new Date().toISOString());
     const membership = db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)");
-    membership.run("buyer-a","buyer-admin","buyer_admin",now());
-    membership.run("buyer-a","buyer-member","buyer_member",now());
-    membership.run("seller-a","seller-admin","seller_admin",now());
-    membership.run("buyer-b","outsider","buyer_admin",now());
+    membership.run("buyer-a","buyer-admin","buyer_admin",new Date().toISOString());
+    membership.run("buyer-a","buyer-member","buyer_member",new Date().toISOString());
+    membership.run("seller-a","seller-admin","seller_admin",new Date().toISOString());
+    membership.run("buyer-b","outsider","buyer_admin",new Date().toISOString());
 
     const headers = (token, tenantId) => ({ authorization: `Bearer ${token}`, "x-active-tenant-id": tenantId, "content-type": "application/json" });
     const unauthenticated = await fetch(`${base}/api/v1/transactions`, { headers: { "x-active-tenant-id": "buyer-a" } });
