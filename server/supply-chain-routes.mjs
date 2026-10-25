@@ -74,10 +74,14 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
   const requireBodySiteScope = (field) => (req,res,next) => requireSiteScope(req,res,next,String(req.body?.[field]??"").trim());
   const requireTransferSiteScope = (req,res,next) => {
     const roles=res.locals.activeTenant?.roles??[];
+    const isAdmin=roles.includes("enterprise_admin");
     for (const siteId of [String(req.body?.fromSiteId??"").trim(),String(req.body?.toSiteId??"").trim()]) {
       const target=db.prepare("SELECT site_type AS siteType,active FROM supply_sites WHERE tenant_id=? AND id=?").get(tenant(res),siteId);
-      if (!target || target.active!==1 || !siteAllowedForRoles(roles,target.siteType)) {
-        audit(req,res,{action:"site_scope_check",outcome:"denied",entityType:"site",entityId:siteId,details:{roles}});
+      const assignment=isAdmin ? true : Boolean(db.prepare(
+        "SELECT 1 FROM supply_site_assignments WHERE tenant_id=? AND user_id=? AND site_id=? AND status='active'"
+      ).get(tenant(res),actor(res),siteId));
+      if (!target || target.active!==1 || !siteAllowedForRoles(roles,target.siteType) || !assignment) {
+        audit(req,res,{action:"site_scope_check",outcome:"denied",entityType:"site",entityId:siteId,details:{roles,assignmentRequired:!isAdmin}});
         return res.status(403).json({error:"site_scope_denied"});
       }
     }
