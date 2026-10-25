@@ -116,6 +116,57 @@ Metode ini dimasukkan setelah kebutuhan bank/provider, negara, mata uang, kontra
 
 Diagram ini menggambarkan batas komponen dan alur tingkat tinggi, bukan diagram deployment produksi. Setiap peer menyimpan data lokal; arsitektur ini **bukan** database terpusat dengan satu master.
 
+### Rantai pasok ekspor: perkebunan → packing house → gudang → pelabuhan
+
+Arsitektur bisnis juga perlu memodelkan rantai pasok fisik dari sumber komoditas hingga keberangkatan ekspor. Lokasi-lokasi ini adalah entitas operasional yang dapat dikelola atau dihubungkan melalui platform; pencantumannya **tidak berarti fasilitas fisik atau integrasi logistik telah tersedia**.
+
+```text
+┌────────────────────────┐
+│ Perkebunan / pemasok   │
+│ kebun, petani, panen   │
+└────────────┬───────────┘
+             │ lot panen + asal + waktu
+             ▼
+┌────────────────────────┐
+│ Collection / Packing   │
+│ House                  │
+│ timbang, sortasi, mutu │
+│ grading, kemasan       │
+└────────────┬───────────┘
+             │ lot produksi + QC + label
+             ▼
+┌────────────────────────┐
+│ Gudang                 │
+│ stok, lokasi, kondisi, │
+│ batch, FEFO/FIFO       │
+└────────────┬───────────┘
+             │ picking + packing list
+             ▼
+┌────────────────────────┐
+│ Pelabuhan / terminal   │
+│ booking, gate-in,      │
+│ kontainer, cut-off     │
+└────────────┬───────────┘
+             │ dokumen + status keberangkatan
+             ▼
+┌────────────────────────┐
+│ Kapal / carrier →      │
+│ importir / tujuan      │
+└────────────────────────┘
+```
+
+#### Entitas dan kontrol yang dibutuhkan
+
+- **Perkebunan dan pemasok:** identitas pemasok/kebun, lokasi dan asal komoditas, tanggal panen, lot panen, kuantitas, praktik/sertifikat jika relevan, serta bukti asal. Klaim keberlanjutan atau sertifikasi hanya boleh ditampilkan jika diverifikasi.
+- **Packing house:** penerimaan dan penimbangan, sortasi/grading, pemeriksaan mutu, proses pengolahan, penggunaan bahan kemasan, label, hasil/kehilangan produksi, serta hubungan antara lot input dan batch output.
+- **Gudang:** penerimaan/pengeluaran, stok per lot/batch, lokasi rak, status karantina/hold, kondisi penyimpanan, kedaluwarsa bila relevan, FEFO/FIFO sesuai jenis komoditas, cycle count, dan bukti serah terima.
+- **Pelabuhan/terminal:** jadwal cut-off, booking carrier/forwarder, nomor kontainer dan seal, gate-in, VGM bila diwajibkan, status pemeriksaan, keberangkatan, serta referensi bill of lading dan dokumen terkait.
+- **Ketertelusuran end-to-end:** setiap perpindahan mencatat identitas lot, kuantitas dan satuan, lokasi asal/tujuan, waktu, aktor, status, bukti, dan referensi dokumen. Pecah/gabung lot harus mempertahankan relasi parent-child dan rekonsiliasi kuantitas.
+- **Kualitas dan kepatuhan:** inspeksi, sampel uji, sertifikat atau izin komoditas bila diwajibkan, kondisi transportasi/suhu untuk barang yang sensitif, dan hold/release yang hanya dapat dilakukan oleh peran berwenang.
+- **Integrasi mitra:** koneksi ke ERP/WMS, timbangan, laboratorium, forwarder, terminal, carrier, dan sistem kepabeanan harus melalui adapter terkontrol, autentikasi, idempotency, pencatatan sumber, dan rekonsiliasi; jangan menganggap API mitra tersedia tanpa verifikasi.
+
+**Gerbang penerimaan rantai pasok:** simulasi satu pengiriman dari lot panen sampai kontainer berangkat; rekonsiliasi kuantitas di setiap titik; uji lot hilang/duplikat, stok negatif, lot ditahan, perubahan lokasi, dokumen kedaluwarsa, serta akses lintas tenant. Data lokasi kebun, pemasok, pelanggan, dan dokumen komersial wajib mengikuti kontrol akses dan kebijakan retensi.
+
 ### Komponen dan tanggung jawab
 
 | Komponen | Tanggung jawab | Batasan |
