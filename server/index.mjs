@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { createSupabaseAuth } from "./auth.mjs";
+import { registerSupplyChainRoutes } from "./supply-chain-routes.mjs";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,7 @@ export function createServer(options = {}) {
   const port = Number(options.port ?? process.env.API_PORT ?? 4001);
   const host = options.host ?? process.env.API_HOST ?? "127.0.0.1";
   const dbPath = options.dbPath ?? process.env.API_DB_PATH ?? path.join(here, "data", "api.sqlite");
+  const singleEnterpriseId = String(options.singleEnterpriseId ?? process.env.SINGLE_ENTERPRISE_ID ?? "").trim();
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
@@ -264,6 +266,14 @@ export function createServer(options = {}) {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ user: res.locals.authIdentity });
   });
+  app.get("/api/v1/enterprise/session", authLimiter, auth.authenticate, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!singleEnterpriseId) return res.status(503).json({ error: "single_enterprise_not_configured" });
+    if (!tenantSchemaReady()) return res.status(503).json({ error: "tenant_schema_not_ready" });
+    const context = resolveEnterpriseMembership(res.locals.authIdentity.id);
+    if (!context) return res.status(403).json({ error: "enterprise_access_denied" });
+    return res.json({ enterprise: { id: context.id, displayName: context.displayName }, user: res.locals.authIdentity, roles: context.roles });
+  });
   app.get("/api/v1/admin/session", authLimiter, auth.authenticate, auth.requireAdmin, (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ ok: true, user: res.locals.authIdentity });
@@ -286,21 +296,42 @@ export function createServer(options = {}) {
 
   function tenantSchemaReady() {
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => row.name));
-    if (!["tenants", "tenant_memberships", "commercial_transactions"].every((name) => tables.has(name))) return false;
+    if (!["tenants", "tenant_memberships", "enterprise_role_assignments", "commercial_transactions"].every((name) => tables.has(name))) return false;
     const columns = new Set(db.prepare("PRAGMA table_info(inquiries)").all().map((row) => row.name));
     return ["buyer_tenant_id", "seller_tenant_id", "tenant_migration_state"].every((name) => columns.has(name));
   }
+  function resolveEnterpriseMembership(userId) {
+    if (!singleEnterpriseId || !tenantSchemaReady()) return null;
+    const membership = db.prepare(`SELECT t.id, t.tenant_type AS tenantType, t.display_name AS displayName,
+      t.status AS tenantStatus, m.role AS legacyRole, m.status AS membershipStatus
+      FROM tenants t JOIN tenant_memberships m ON m.tenant_id=t.id
+      WHERE m.user_id=? AND t.id=?`).get(userId, singleEnterpriseId);
+    if (!membership || membership.tenantStatus !== "active" || membership.membershipStatus !== "active") return null;
+    const roles = db.prepare(`SELECT role FROM enterprise_role_assignments
+      WHERE enterprise_id=? AND user_id=? AND status='active' ORDER BY role`).all(singleEnterpriseId, userId).map((row) => row.role);
+    return { ...membership, role: roles[0] ?? null, roles };
+  }
   function requireActiveTenant(req, res, next) {
     if (!tenantSchemaReady()) return res.status(503).json({ error: "tenant_schema_not_ready" });
+    if (!singleEnterpriseId) return res.status(503).json({ error: "single_enterprise_not_configured" });
     const identity = res.locals.authIdentity;
-    const tenantId = String(req.get("x-active-tenant-id") ?? "").trim();
-    if (!tenantId) return res.status(400).json({ error: "active_tenant_required" });
-    const membership = db.prepare(`SELECT t.id, t.tenant_type AS tenantType, t.status AS tenantStatus, m.role, m.status AS membershipStatus
-      FROM tenants t JOIN tenant_memberships m ON m.tenant_id=t.id WHERE m.user_id=? AND t.id=?`).get(identity?.id ?? "", tenantId);
-    if (!identity || !membership || membership.tenantStatus !== "active" || membership.membershipStatus !== "active") return res.status(403).json({ error: "tenant_access_denied" });
+    const requestedId = String(req.get("x-active-tenant-id") ?? "").trim();
+    if (requestedId && requestedId !== singleEnterpriseId) return res.status(403).json({ error: "enterprise_context_locked" });
+    const membership = identity ? resolveEnterpriseMembership(identity.id) : null;
+    if (!membership) return res.status(403).json({ error: "enterprise_access_denied" });
     res.locals.activeTenant = membership;
     return next();
   }
+  function requireEnterpriseRole(...allowedRoles) {
+    return (_req, res, next) => {
+      const roles = res.locals.activeTenant?.roles ?? [];
+      if (!allowedRoles.some((role) => roles.includes(role))) return res.status(403).json({ error: "enterprise_role_forbidden" });
+      return next();
+    };
+  }
+
+
+  registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, requireEnterpriseRole, authLimiter });
 
   function readTenantBundle(transactionId) {
     const transaction = db.prepare("SELECT id,buyer_tenant_id AS buyerTenantId,seller_tenant_id AS sellerTenantId,inquiry_id AS inquiryId,status,created_at AS createdAt FROM commercial_transactions WHERE id=?").get(transactionId);
@@ -345,34 +376,17 @@ export function createServer(options = {}) {
       && Array.isArray(b.tenants) && b.tenants.length===2 && b.tenants.every(t=>t && typeof t.id==="string" && ["buyer","seller"].includes(t.tenantType) && typeof t.displayName==="string" && ["active","suspended","archived"].includes(t.status) && typeof t.createdAt==="string")
       && Array.isArray(b.memberships) && b.memberships.every(m=>m && typeof m.tenantId==="string" && typeof m.userId==="string" && ["buyer_admin","buyer_member","seller_admin","seller_member"].includes(m.role) && ["active","suspended","revoked"].includes(m.status) && typeof m.createdAt==="string"));
   }
-  app.post("/api/v1/sync/tenants", (req,res) => {
-    if (!secret || !tenantSchemaReady()) return res.status(503).json({error:"tenant_sync_unavailable"});
-    if (!sameSecret(req.get("authorization"),secret)) return res.status(401).json({error:"unauthorized"});
-    const peerId=String(req.get("x-sync-peer")??"");
-    if (!peers.some(peer=>peer.nodeId===peerId)) return res.status(403).json({error:"unknown_sync_peer"});
-    const body=req.body;
-    if (typeof body?.eventId!=="string" || body.eventType!=="transaction.upsert" || !validTenantBundle(body.payload)) return res.status(400).json({error:"invalid_tenant_sync_event"});
-    const bundle=body.payload;
-    try {
-      db.transaction(() => {
-        for (const tenant of bundle.tenants) db.prepare("INSERT INTO tenants(id,tenant_type,display_name,status,created_at) VALUES(@id,@tenantType,@displayName,@status,@createdAt) ON CONFLICT(id) DO UPDATE SET tenant_type=excluded.tenant_type,display_name=excluded.display_name,status=excluded.status").run(tenant);
-        for (const member of bundle.memberships) db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(@tenantId,@userId,@role,@status,@createdAt) ON CONFLICT(tenant_id,user_id) DO UPDATE SET role=excluded.role,status=excluded.status").run(member);
-        const t=bundle.transaction;
-        const inquiryId=t.inquiryId && db.prepare("SELECT id FROM inquiries WHERE id=?").get(t.inquiryId) ? t.inquiryId : null;
-        db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,inquiry_id,status,created_at) VALUES(@id,@buyerTenantId,@sellerTenantId,@inquiryId,@status,@createdAt) ON CONFLICT(id) DO UPDATE SET buyer_tenant_id=excluded.buyer_tenant_id,seller_tenant_id=excluded.seller_tenant_id,inquiry_id=excluded.inquiry_id,status=excluded.status").run({...t,inquiryId});
-      })();
-    } catch { return res.status(409).json({error:"tenant_sync_conflict"}); }
-    return res.status(200).json({result:"applied",eventId:body.eventId});
-  });
+  // Multi-enterprise tenant bundle replication is retired in the single-enterprise model.
+  app.post("/api/v1/sync/tenants", (_req,res) => res.status(410).json({error:"multi_enterprise_sync_retired"}));
 
-  app.get("/api/v1/transactions", auth.authenticate, requireActiveTenant, (_req, res) => {
+  app.get("/api/v1/transactions", auth.authenticate, requireActiveTenant, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), (_req, res) => {
     const tenant = res.locals.activeTenant;
     const rows = db.prepare(`SELECT id, buyer_tenant_id AS buyerTenantId, seller_tenant_id AS sellerTenantId, inquiry_id AS inquiryId, status, created_at AS createdAt
       FROM commercial_transactions WHERE buyer_tenant_id=? OR seller_tenant_id=? ORDER BY created_at DESC LIMIT 100`).all(tenant.id, tenant.id);
     res.setHeader("Cache-Control", "no-store");
     return res.json({ data: rows });
   });
-  app.get("/api/v1/transactions/:id", auth.authenticate, requireActiveTenant, (req, res) => {
+  app.get("/api/v1/transactions/:id", auth.authenticate, requireActiveTenant, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), (req, res) => {
     const tenant = res.locals.activeTenant;
     const row = db.prepare(`SELECT id, buyer_tenant_id AS buyerTenantId, seller_tenant_id AS sellerTenantId, inquiry_id AS inquiryId, status, created_at AS createdAt
       FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)`).get(req.params.id, tenant.id, tenant.id);
@@ -380,37 +394,12 @@ export function createServer(options = {}) {
     if (!row) return res.status(404).json({ error: "transaction_not_found" });
     return res.json({ data: row });
   });
-  app.post("/api/v1/transactions", auth.authenticate, requireActiveTenant, (req, res) => {
-    const tenant = res.locals.activeTenant;
-    const sellerTenantId = typeof req.body?.sellerTenantId === "string" ? req.body.sellerTenantId.trim() : "";
-    if (tenant.tenantType !== "buyer" || tenant.role !== "buyer_admin") return res.status(403).json({ error: "buyer_admin_required" });
-    if (!sellerTenantId || sellerTenantId === tenant.id) return res.status(400).json({ error: "invalid_seller_tenant" });
-    const seller = db.prepare("SELECT id FROM tenants WHERE id=? AND tenant_type='seller' AND status='active'").get(sellerTenantId);
-    if (!seller) return res.status(404).json({ error: "seller_tenant_not_found" });
-    const id = crypto.randomUUID();
-    const createdAt = now();
-    db.prepare("INSERT INTO commercial_transactions (id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES (?,?,?,'pending',?)").run(id, tenant.id, sellerTenantId, createdAt);
-    res.setHeader("Cache-Control", "no-store");
-    enqueueTenantBundle(id);
-    return res.status(201).json({ data: { id, buyerTenantId: tenant.id, sellerTenantId, status: "pending", createdAt } });
-  });
-  app.patch("/api/v1/transactions/:id/status", auth.authenticate, requireActiveTenant, (req, res) => {
-    const tenant = res.locals.activeTenant;
-    const nextStatus = req.body?.status;
-    const row = db.prepare("SELECT id,buyer_tenant_id AS buyerTenantId,seller_tenant_id AS sellerTenantId,status FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)").get(req.params.id, tenant.id, tenant.id);
-    if (!row) return res.status(404).json({ error: "transaction_not_found" });
-    const sellerAction = tenant.tenantType === "seller" && tenant.role === "seller_admin" && ["accepted","fulfilled"].includes(nextStatus);
-    const buyerAction = tenant.tenantType === "buyer" && tenant.role === "buyer_admin" && ["cancelled","disputed"].includes(nextStatus);
-    const validTransition = (nextStatus === "accepted" && row.status === "pending" && sellerAction)
-      || (nextStatus === "fulfilled" && row.status === "accepted" && sellerAction)
-      || ((nextStatus === "cancelled" || nextStatus === "disputed") && ["pending","accepted"].includes(row.status) && buyerAction);
-    if (!validTransition) return res.status(403).json({ error: "transaction_transition_denied" });
-    const changed = db.prepare("UPDATE commercial_transactions SET status=? WHERE id=? AND status=?").run(nextStatus, row.id, row.status);
-    if (changed.changes !== 1) return res.status(409).json({ error: "transaction_state_conflict" });
-    enqueueTenantBundle(row.id);
-    res.setHeader("Cache-Control", "no-store");
-    return res.json({ data: { id: row.id, status: nextStatus } });
-  });
+  // Legacy two-enterprise transaction writes are intentionally disabled. Buyer/Seller workflows
+  // must be implemented as roles and orders within the configured single enterprise.
+  app.post("/api/v1/transactions", auth.authenticate, requireActiveTenant, (_req,res) =>
+    res.status(410).json({error:"single_enterprise_order_workflow_not_implemented"}));
+  app.patch("/api/v1/transactions/:id/status", auth.authenticate, requireActiveTenant, (_req,res) =>
+    res.status(410).json({error:"single_enterprise_order_workflow_not_implemented"}));
 
   app.get("/api/v1/products", (_req, res) => {
     res.setHeader("Cache-Control", "no-store");

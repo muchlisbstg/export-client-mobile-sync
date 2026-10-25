@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -87,6 +87,8 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authAccessToken, setAuthAccessToken] = useState("");
   const [authRole, setAuthRole] = useState("");
+  const [authEnterpriseName, setAuthEnterpriseName] = useState("");
+  const [authEnterpriseRoles, setAuthEnterpriseRoles] = useState<string[]>([]);
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
@@ -102,7 +104,7 @@ export default function App() {
   const [catalogCsvNotice, setCatalogCsvNotice] = useState("");
   const [comparisonShareNotice, setComparisonShareNotice] = useState("");
   const [comparisonCsvNotice, setComparisonCsvNotice] = useState("");
-  const catalogSearchRef = useRef<TextInput>(null);
+  const catalogSearchRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   async function signInAdmin() {
     const authUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
@@ -119,13 +121,24 @@ export default function App() {
       const session = await fetch(`${API_BASE_URL}/api/v1/auth/session`, { headers: { Authorization: `Bearer ${loginBody.access_token}` } });
       const sessionBody = await session.json().catch(() => ({}));
       if (!session.ok || !sessionBody.user) throw new Error(sessionBody.error || "Backend menolak sesi.");
-      setAuthAccessToken(loginBody.access_token); setAuthRole(sessionBody.user.role); setAuthPassword("");
+      const enterpriseResponse = await fetch(`${API_BASE_URL}/api/v1/enterprise/session`, {
+        headers: { Authorization: `Bearer ${loginBody.access_token}` },
+      });
+      const enterpriseBody = await enterpriseResponse.json().catch(() => ({}));
+      if (!enterpriseResponse.ok || !enterpriseBody.enterprise || !Array.isArray(enterpriseBody.roles)) {
+        throw new Error(enterpriseBody.error || "Akun tidak memiliki akses ke enterprise yang dikonfigurasi.");
+      }
+      setAuthAccessToken(loginBody.access_token);
+      setAuthRole(sessionBody.user.role);
+      setAuthEnterpriseName(enterpriseBody.enterprise.displayName);
+      setAuthEnterpriseRoles(enterpriseBody.roles);
+      setAuthPassword("");
       if (sessionBody.user.role === "admin") {
         const admin = await fetch(`${API_BASE_URL}/api/v1/admin/session`, { headers: { Authorization: `Bearer ${loginBody.access_token}` } });
         if (!admin.ok) throw new Error("Backend tidak mengizinkan peran admin.");
-        setAuthMessage("Sesi admin diverifikasi oleh backend.");
-      } else setAuthMessage("Login berhasil, tetapi akun ini tidak memiliki peran admin.");
-    } catch (caught) { setAuthAccessToken(""); setAuthRole(""); setAuthMessage(caught instanceof Error ? caught.message : "Login gagal."); }
+      }
+      setAuthMessage("Sesi dan peran enterprise diverifikasi oleh backend.");
+    } catch (caught) { setAuthAccessToken(""); setAuthRole(""); setAuthEnterpriseName(""); setAuthEnterpriseRoles([]); setAuthMessage(caught instanceof Error ? caught.message : "Login gagal."); }
     finally { setAuthBusy(false); }
   }
 
@@ -347,13 +360,33 @@ export default function App() {
         </View>
 
         <View style={[styles.card, { padding: 14, marginTop: 10 }]}>
-          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login admin" : "Login admin"}</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login enterprise" : "Login enterprise"}</Text></Pressable>
           {showAuthPanel && <>
-            {authAccessToken ? <Text accessibilityRole="text" style={{ marginTop: 8 }}>Sesi aktif · peran: {authRole}</Text> : null}
+            {authAccessToken ? <View style={{ marginTop: 10, padding: 12, backgroundColor: "#edf2e8", borderRadius: 8 }}>
+              <Text accessibilityRole="text" style={{ color: colors.green, fontWeight: "800" }}>{authEnterpriseName || "Enterprise"}</Text>
+              <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>Satu enterprise · sesi: {authRole}</Text>
+              <Text style={{ color: colors.ink, fontSize: 11, fontWeight: "700", marginTop: 8 }}>Peran yang diberikan server</Text>
+              {authEnterpriseRoles.length ? authEnterpriseRoles.map((role) => <Text key={role} style={{ color: colors.green, fontSize: 11, marginTop: 4 }}>• {({ enterprise_admin: "Enterprise Admin", buyer: "Buyer / Procurement", seller: "Seller internal", supplier: "Supplier eksternal", warehouse: "Gudang / Warehouse", qc: "Quality Control (QC)", logistics: "Logistik", auditor: "Auditor / Management" } as Record<string, string>)[role] ?? role}</Text>) : <Text style={{ color: colors.danger, fontSize: 11, marginTop: 4 }}>Tidak ada peran aktif. Hubungi administrator enterprise.</Text>}
+              <Text style={{ color: colors.ink, fontSize: 11, fontWeight: "700", marginTop: 10 }}>Kapabilitas sesuai peran</Text>
+              {authEnterpriseRoles.map((role) => {
+                const capabilities: Record<string, string> = {
+                  enterprise_admin: "Kelola lokasi dan operasi yang diizinkan admin",
+                  buyer: "Baca stok dan traceability sesuai kewenangan",
+                  seller: "Baca traceability yang diizinkan",
+                  supplier: "Daftarkan lot pasokan; tidak dapat melihat daftar stok enterprise",
+                  warehouse: "Penerimaan lot, pemrosesan, mutasi dan stok",
+                  qc: "Inspeksi mutu dan pembacaan stok",
+                  logistics: "Mutasi stok dan proses serah-terima / dispatch",
+                  auditor: "Baca stok dan traceability untuk audit",
+                };
+                return <Text key={role + "-capability"} style={{ color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 }}>• {capabilities[role] ?? "Akses terbatas"}</Text>;
+              })}
+              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 8 }}>Kapabilitas ini menjelaskan akses API yang tersedia; modul Buyer/Seller untuk RFQ dan order belum dibuat.</Text>
+            </View> : null}
             <Field label="Email" value={authEmail} onChangeText={setAuthEmail} placeholder="email@perusahaan.com" keyboardType="email-address" autoCapitalize="none" />
             <Field label="Password" value={authPassword} onChangeText={setAuthPassword} placeholder="Password" autoCapitalize="none" />
             <Pressable accessibilityRole="button" disabled={authBusy} onPress={() => void signInAdmin()} style={{ backgroundColor: colors.green, padding: 12, borderRadius: 10, marginTop: 8 }}><Text style={{ color: colors.white, fontWeight: "800", textAlign: "center" }}>{authBusy ? "Memeriksa…" : "Masuk"}</Text></Pressable>
-            {authAccessToken ? <Pressable onPress={() => { setAuthAccessToken(""); setAuthRole(""); setAuthMessage("Sesi dihapus dari memori."); }} style={{ padding: 10 }}><Text style={{ color: colors.green }}>Keluar</Text></Pressable> : null}
+            {authAccessToken ? <Pressable onPress={() => { setAuthAccessToken(""); setAuthRole(""); setAuthEnterpriseName(""); setAuthEnterpriseRoles([]); setAuthMessage("Sesi dihapus dari memori."); }} style={{ padding: 10 }}><Text style={{ color: colors.green }}>Keluar</Text></Pressable> : null}
             {authMessage ? <Text accessibilityRole="text" style={{ color: colors.muted, marginTop: 8 }}>{authMessage}</Text> : null}
             <Text style={{ color: colors.muted, fontSize: 11, marginTop: 6 }}>Token hanya disimpan di memori. Backend tetap memutuskan akses admin.</Text>
           </>}

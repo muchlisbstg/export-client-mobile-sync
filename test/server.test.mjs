@@ -25,14 +25,14 @@ async function freePort() {
   return port;
 }
 
-async function boot({ nodeId = "mobile-off", port = 0, syncSecret = "", syncPeers = "", supabaseUrl = "https://auth.example.test", supabaseAnonKey = "test-anon-key", authFetcher = async (_url, init) => {
+async function boot({ nodeId = "mobile-off", port = 0, syncSecret = "", syncPeers = "", singleEnterpriseId = "", supabaseUrl = "https://auth.example.test", supabaseAnonKey = "test-anon-key", authFetcher = async (_url, init) => {
   const token = init.headers.Authorization.replace(/^Bearer /, "");
   const ids = { "buyer-token": "buyer-admin", "seller-token": "seller-admin", "member-token": "buyer-member", "outsider-token": "outsider" };
   return new Response(JSON.stringify({ id: ids[token] ?? "unknown-user" }), { status: token === "expired" ? 401 : 200 });
 } } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "export-mobile-api-"));
   tempDirs.push(directory);
-  const service = createServer({ host: "127.0.0.1", port, nodeId, syncSecret, syncPeers, supabaseUrl, supabaseAnonKey, authFetcher, dbPath: path.join(directory, "api.sqlite") });
+  const service = createServer({ host: "127.0.0.1", port, nodeId, syncSecret, syncPeers, singleEnterpriseId, supabaseUrl, supabaseAnonKey, authFetcher, dbPath: path.join(directory, "api.sqlite") });
   const started = await service.start();
   services.push(service);
   return { service, base: `http://127.0.0.1:${started.port}` };
@@ -285,99 +285,48 @@ test("peer replication is idempotent and conflicts never overwrite stored data",
 });
 
 
-test("tenant transaction reads and writes are scoped to verified active membership and role", async () => {
-  const { base, service } = await boot();
+test("single-enterprise mode locks context and disables legacy cross-enterprise order writes", async () => {
+  const { base, service } = await boot({ singleEnterpriseId: "enterprise-a" });
   try {
     migrateTenantIsolation(service.db);
     const db = service.db;
-    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-a","buyer","Buyer A",new Date().toISOString());
-    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("seller-a","seller","Seller A",new Date().toISOString());
-    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("buyer-b","buyer","Buyer B",new Date().toISOString());
-    const membership = db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)");
-    membership.run("buyer-a","buyer-admin","buyer_admin",new Date().toISOString());
-    membership.run("buyer-a","buyer-member","buyer_member",new Date().toISOString());
-    membership.run("seller-a","seller-admin","seller_admin",new Date().toISOString());
-    membership.run("buyer-b","outsider","buyer_admin",new Date().toISOString());
-
-    const headers = (token, tenantId) => ({ authorization: `Bearer ${token}`, "x-active-tenant-id": tenantId, "content-type": "application/json" });
-    const unauthenticated = await fetch(`${base}/api/v1/transactions`, { headers: { "x-active-tenant-id": "buyer-a" } });
-    assert.equal(unauthenticated.status, 401);
-
-    const noTenant = await fetch(`${base}/api/v1/transactions`, { headers: { authorization: "Bearer buyer-token" } });
-    assert.equal(noTenant.status, 400);
-
-    const createdResponse = await fetch(`${base}/api/v1/transactions`, {
-      method: "POST", headers: headers("buyer-token","buyer-a"),
-      body: JSON.stringify({ buyerTenantId: "buyer-b", sellerTenantId: "seller-a" }),
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("enterprise-a","seller","Enterprise A",now);
+    db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)").run("enterprise-a","buyer-admin","buyer_admin",now);
+    db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("other-enterprise","buyer","Other Enterprise",now);
+    db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)").run("other-enterprise","outsider","buyer_admin",now);
+    db.prepare("INSERT INTO enterprise_role_assignments (enterprise_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)").run("enterprise-a","buyer-admin","buyer",now);
+    const headers = (token, enterpriseId) => ({ authorization: `Bearer ${token}`, ...(enterpriseId ? {"x-active-tenant-id":enterpriseId} : {}), "content-type":"application/json" });
+    assert.equal((await fetch(`${base}/api/v1/transactions`,{headers:{"x-active-tenant-id":"enterprise-a"}})).status,401);
+    assert.equal((await fetch(`${base}/api/v1/transactions`,{headers:headers("buyer-token","other-enterprise")})).status,403);
+    assert.equal((await fetch(`${base}/api/v1/transactions`,{headers:headers("outsider-token","enterprise-a")})).status,403);
+    const list=await fetch(`${base}/api/v1/transactions`,{headers:headers("buyer-token","enterprise-a")});
+    assert.equal(list.status,200);
+    assert.deepEqual((await list.json()).data,[]);
+    const create=await fetch(`${base}/api/v1/transactions`,{
+      method:"POST",headers:headers("buyer-token","enterprise-a"),body:JSON.stringify({sellerTenantId:"other-enterprise"}),
     });
-    assert.equal(createdResponse.status, 201);
-    const created = (await createdResponse.json()).data;
-    assert.equal(created.buyerTenantId, "buyer-a", "buyer tenant comes from verified membership, never request body");
-
-    const buyerList = await fetch(`${base}/api/v1/transactions`, { headers: headers("buyer-token","buyer-a") });
-    assert.equal((await buyerList.json()).data.length, 1);
-    const wrongTenant = await fetch(`${base}/api/v1/transactions/${created.id}`, { headers: headers("outsider-token","buyer-b") });
-    assert.equal(wrongTenant.status, 404);
-    const forgedTenant = await fetch(`${base}/api/v1/transactions`, { headers: headers("outsider-token","buyer-a") });
-    assert.equal(forgedTenant.status, 403);
-
-    const buyerMemberWrite = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
-      method: "PATCH", headers: headers("member-token","buyer-a"), body: JSON.stringify({ status: "cancelled" }),
+    assert.equal(create.status,410);
+    assert.equal((await create.json()).error,"single_enterprise_order_workflow_not_implemented");
+    const update=await fetch(`${base}/api/v1/transactions/legacy/status`,{
+      method:"PATCH",headers:headers("buyer-token","enterprise-a"),body:JSON.stringify({status:"accepted"}),
     });
-    assert.equal(buyerMemberWrite.status, 403);
-
-    const sellerAccept = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
-      method: "PATCH", headers: headers("seller-token","seller-a"), body: JSON.stringify({ status: "accepted" }),
-    });
-    assert.equal(sellerAccept.status, 200);
-    const sellerFulfill = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
-      method: "PATCH", headers: headers("seller-token","seller-a"), body: JSON.stringify({ status: "fulfilled" }),
-    });
-    assert.equal(sellerFulfill.status, 200);
-
-    const sellerCannotCreate = await fetch(`${base}/api/v1/transactions`, {
-      method: "POST", headers: headers("seller-token","seller-a"), body: JSON.stringify({ sellerTenantId: "seller-a" }),
-    });
-    assert.equal(sellerCannotCreate.status, 403);
-    const fulfilledCannotBeCancelled = await fetch(`${base}/api/v1/transactions/${created.id}/status`, {
-      method: "PATCH", headers: headers("buyer-token","buyer-a"), body: JSON.stringify({ status: "cancelled" }),
-    });
-    assert.equal(fulfilledCannotBeCancelled.status, 403);
-  } finally {
-    await service.close();
-  }
+    assert.equal(update.status,410);
+  } finally { await service.close(); }
 });
 
-test("tenant sync endpoint accepts a trusted peer bundle and rejects unauthenticated peers", async () => {
+test("multi-enterprise tenant bundle sync is retired", async () => {
   const secret = "tenant-sync-test-secret-at-least-32-chars";
   const { base, service } = await boot({ syncSecret: secret, syncPeers: "peer-a=http://127.0.0.1:6553" });
   try {
     migrateTenantIsolation(service.db);
-    const payload = {
-      transaction: { id: "txn-sync-1", buyerTenantId: "buyer-sync", sellerTenantId: "seller-sync", inquiryId: null, status: "pending", createdAt: new Date().toISOString() },
-      tenants: [
-        { id: "buyer-sync", tenantType: "buyer", displayName: "Buyer Sync", status: "active", createdAt: new Date().toISOString() },
-        { id: "seller-sync", tenantType: "seller", displayName: "Seller Sync", status: "active", createdAt: new Date().toISOString() },
-      ],
-      memberships: [
-        { tenantId: "buyer-sync", userId: "buyer-user", role: "buyer_admin", status: "active", createdAt: new Date().toISOString() },
-        { tenantId: "seller-sync", userId: "seller-user", role: "seller_admin", status: "active", createdAt: new Date().toISOString() },
-      ],
-    };
-    const body = JSON.stringify({ eventId: "event-sync-1", eventType: "transaction.upsert", payload });
-    const denied = await fetch(base + "/api/v1/sync/tenants", {
-      method: "POST", headers: { authorization: "Bearer wrong-secret", "x-sync-peer": "peer-a", "content-type": "application/json" }, body,
+    const response = await fetch(base + "/api/v1/sync/tenants", {
+      method:"POST",
+      headers:{authorization:"Bearer "+secret,"x-sync-peer":"peer-a","content-type":"application/json"},
+      body:JSON.stringify({eventId:"event-1",eventType:"transaction.upsert",payload:{}}),
     });
-    assert.equal(denied.status, 401);
-    const applied = await fetch(base + "/api/v1/sync/tenants", {
-      method: "POST", headers: { authorization: "Bearer " + secret, "x-sync-peer": "peer-a", "content-type": "application/json" }, body,
-    });
-    assert.equal(applied.status, 200);
-    assert.equal(service.db.prepare("SELECT status FROM commercial_transactions WHERE id='txn-sync-1'").get().status, "pending");
-    assert.equal(service.db.prepare("SELECT COUNT(*) AS count FROM tenant_memberships WHERE tenant_id IN ('buyer-sync','seller-sync')").get().count, 2);
-    const unknownPeer = await fetch(base + "/api/v1/sync/tenants", {
-      method: "POST", headers: { authorization: "Bearer " + secret, "x-sync-peer": "not-configured", "content-type": "application/json" }, body,
-    });
-    assert.equal(unknownPeer.status, 403);
+    assert.equal(response.status,410);
+    assert.equal((await response.json()).error,"multi_enterprise_sync_retired");
+    assert.equal(service.db.prepare("SELECT COUNT(*) AS count FROM tenants").get().count,0);
   } finally { await service.close(); }
 });
