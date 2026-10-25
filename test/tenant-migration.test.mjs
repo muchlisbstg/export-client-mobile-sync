@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { migrateTenantIsolation } from "../scripts/migrate-tenant-isolation.mjs";
 import { assignEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
 
@@ -42,6 +43,12 @@ test("migration is idempotent and creates tenant model tables", () => {
 
 test("enterprise role provisioning requires active membership and records explicit least-privilege roles", () => {
   const db = legacyDb();
+  const previousOperatorToken = process.env.ROLE_PROVISIONING_OPERATOR_TOKEN;
+  const previousOperatorHashes = process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON;
+  process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "test-admin-token";
+  process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON = JSON.stringify({
+    "admin-user": crypto.createHash("sha256").update("test-admin-token").digest("hex"),
+  });
   try {
     migrateTenantIsolation(db);
     const now = new Date().toISOString();
@@ -56,11 +63,20 @@ test("enterprise role provisioning requires active membership and records explic
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"missing-user",role:"warehouse",grantedBy:"admin-user"}),/active membership/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"root",grantedBy:"admin-user"}),/unsupported enterprise role/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse"}),/operator ID are required/);
-    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"qc-user"}),/different active enterprise_admin/);
-    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"missing-operator"}),/different active enterprise_admin/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"qc-user"}),/operator authorization/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"missing-operator"}),/operator authorization/);
+    process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "invalid-token";
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/operator authorization/);
+    process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "test-admin-token";
     db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'").run();
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/different active enterprise_admin/);
-  } finally { db.close(); }
+  } finally {
+    db.close();
+    if (previousOperatorToken === undefined) delete process.env.ROLE_PROVISIONING_OPERATOR_TOKEN;
+    else process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = previousOperatorToken;
+    if (previousOperatorHashes === undefined) delete process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON;
+    else process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON = previousOperatorHashes;
+  }
 });
 
 test("migration refuses to run without the existing inquiries table", () => {
