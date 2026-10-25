@@ -320,6 +320,43 @@ test("single-enterprise mode locks context and disables legacy cross-enterprise 
   } finally { await service.close(); }
 });
 
+test("sync rejects spoofed or unconfigured peer identities", async () => {
+  const { base, service } = await boot({
+    nodeId: "mobile-target",
+    syncSecret: secret,
+    syncPeers: "trusted-peer=http://127.0.0.1:6553",
+  });
+  try {
+    const record = {
+      id: "123e4567-e89b-42d3-a456-426614174000",
+      trackingCode: "ABCDEF0123456789ABCDEF02",
+      customerName: "Trusted Test",
+      customerEmail: "trusted@example.test",
+      destinationCountry: "Japan",
+      productId: "green-coffee",
+      quantity: 5,
+      unit: "kg",
+      status: "received",
+      createdAt: new Date().toISOString(),
+      originNodeId: "rogue-peer",
+    };
+    const spoofedHeader = await fetch(`${base}/api/v1/sync/inquiries`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${secret}`, "x-sync-peer": "trusted-peer", "content-type": "application/json" },
+      body: JSON.stringify(record),
+    });
+    assert.equal(spoofedHeader.status, 403);
+    assert.deepEqual(await spoofedHeader.json(), { error: "sync_peer_identity_mismatch" });
+    const unconfiguredPeer = await fetch(`${base}/api/v1/sync/inquiries`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+      body: JSON.stringify(record),
+    });
+    assert.equal(unconfiguredPeer.status, 403);
+    assert.deepEqual(await unconfiguredPeer.json(), { error: "sync_peer_not_configured" });
+    assert.equal(service.db.prepare("SELECT COUNT(*) AS count FROM inquiries WHERE id=?").get(record.id).count, 0);
+  } finally { await service.close(); }
+});
 test("multi-enterprise tenant bundle sync is retired", async () => {
   const secret = "tenant-sync-test-secret-at-least-32-chars";
   const { base, service } = await boot({ syncSecret: secret, syncPeers: "peer-a=http://127.0.0.1:6553" });
