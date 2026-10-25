@@ -135,6 +135,8 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     "token-supplier": "user-supplier",
     "token-warehouse": "user-warehouse",
     "token-qc": "user-qc",
+    "token-logistics": "user-logistics",
+    "token-inactive": "user-inactive",
     "token-outsider": "user-outsider",
   };
   const dbServer=createServer({
@@ -158,19 +160,21 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     const insertRole=dbServer.db.prepare("INSERT INTO enterprise_role_assignments(enterprise_id,user_id,role,created_at) VALUES(?,?,?,?)");
     for (const [user,role] of [
       ["user-admin","seller_admin"],["user-buyer","buyer_member"],["user-seller","seller_member"],
-      ["user-supplier","seller_member"],["user-warehouse","seller_member"],["user-qc","seller_member"],
+      ["user-supplier","seller_member"],["user-warehouse","seller_member"],["user-qc","seller_member"],["user-logistics","seller_member"],
     ]) {
       insertMembership.run("enterprise-1",user,role,now);
     }
     insertMembership.run("other-enterprise","user-outsider","buyer_member",now);
+    dbServer.db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'suspended',?)").run("enterprise-1","user-inactive","buyer_member",now);
     for (const [user,role] of [
       ["user-admin","enterprise_admin"],["user-buyer","buyer"],["user-seller","seller"],
-      ["user-supplier","supplier"],["user-warehouse","warehouse"],["user-qc","qc"],
+      ["user-supplier","supplier"],["user-warehouse","warehouse"],["user-qc","qc"],["user-logistics","logistics"],
     ]) insertRole.run("enterprise-1",user,role,now);
 
     const service=createSupplyChainService(dbServer.db);
     const site=service.createSite({tenantId:"enterprise-1",siteCode:"WH-1",name:"Main Warehouse",siteType:"warehouse",actorId:"user-admin"});
     const supplierSite=service.createSite({tenantId:"enterprise-1",siteCode:"SUP-1",name:"Supplier Intake",siteType:"supplier",actorId:"user-admin"});
+    const portSite=service.createSite({tenantId:"enterprise-1",siteCode:"PORT-1",name:"Export Port",siteType:"port_terminal",actorId:"user-admin"});
     const lot=service.receiveLot({tenantId:"enterprise-1",siteId:site.id,lotCode:"LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:1000,unit:"kg",actorId:"user-admin",idempotencyKey:"seed-lot"});
     const headers=(token)=>({Authorization:`Bearer ${token}`});
     const request=(token,path,init={})=>fetch(`${base}${path}`,{...init,headers:{...headers(token),...(init.headers??{})}});
@@ -228,5 +232,52 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     assert.equal(switchedEnterprise.status,403);
     const outsider=await request("token-outsider","/api/v1/enterprise/session");
     assert.equal(outsider.status,403);
+    const inactive=await request("token-inactive","/api/v1/enterprise/session");
+    assert.equal(inactive.status,403);
+
+    const supplierLotBody=(await supplierLot.clone().json()).data;
+    const lotId=supplierLotBody.lotId ?? supplierLotBody.id;
+    assert.ok(lotId,"supplier receipt returns a lot identifier");
+    const qcReceiptInspection=await request("token-qc",`/api/v1/supply/lots/${lotId}/inspections`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({siteId:supplierSite.id,inspectionType:"receiving",result:"pass",criteria:{moistureMax:12},evidenceRef:"evidence://qc-pass"}),
+    });
+    assert.equal(qcReceiptInspection.status,201,await qcReceiptInspection.clone().text());
+
+    const stockMovement=await request("token-warehouse","/api/v1/supply/movements",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"e2e-move-to-warehouse"},
+      body:JSON.stringify({lotId,fromSiteId:supplierSite.id,toSiteId:site.id,quantityMilli:500,unit:"kg"}),
+    });
+    assert.equal(stockMovement.status,201,await stockMovement.clone().text());
+
+    const handover=await request("token-warehouse","/api/v1/supply/handovers",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"e2e-handover"},
+      body:JSON.stringify({lotId,fromSiteId:site.id,toSiteId:portSite.id,quantityMilli:500,unit:"kg",handoverCode:"E2E-HANDOVER-1",carrierName:"Test Carrier",vehicleOrContainerRef:"CONTAINER-E2E",sealNumber:"SEAL-E2E"}),
+    });
+    assert.equal(handover.status,201,await handover.clone().text());
+    const handoverBody=(await handover.clone().json()).data;
+    const handoverId=handoverBody.id ?? handoverBody.handoverId;
+    assert.ok(handoverId,"handover response returns an identifier");
+
+    const dispatched=await request("token-logistics",`/api/v1/supply/handovers/${handoverId}/dispatch`,{
+      method:"POST",headers:{"Idempotency-Key":"e2e-dispatch"},
+    });
+    assert.equal(dispatched.status,201,await dispatched.clone().text());
+
+    const received=await request("token-warehouse",`/api/v1/supply/handovers/${handoverId}/receive`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({receivedQuantityMilli:500,sealNumber:"SEAL-E2E"}),
+    });
+    assert.equal(received.status,201,await received.clone().text());
+
+    const finalStock=await request("token-warehouse",`/api/v1/supply/stock?siteId=${encodeURIComponent(portSite.id)}`);
+    assert.equal(finalStock.status,200);
+    const finalStockBody=await finalStock.json();
+    assert.ok(finalStockBody.data.some(row=>row.lotId===lotId&&row.quantityMilli===500));
+
+    const trace=await request("token-seller",`/api/v1/supply/lots/${lotId}/trace`);
+    assert.equal(trace.status,200);
+    const traceBody=await trace.json();
+    assert.ok(JSON.stringify(traceBody.data).includes("E2E-HANDOVER-1"),"traceability includes the completed handover");
   } finally { await dbServer.close(); }
 });

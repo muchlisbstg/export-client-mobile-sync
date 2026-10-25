@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { migrateTenantIsolation } from "../scripts/migrate-tenant-isolation.mjs";
 import { assignEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
 
@@ -42,18 +43,40 @@ test("migration is idempotent and creates tenant model tables", () => {
 
 test("enterprise role provisioning requires active membership and records explicit least-privilege roles", () => {
   const db = legacyDb();
+  const previousOperatorToken = process.env.ROLE_PROVISIONING_OPERATOR_TOKEN;
+  const previousOperatorHashes = process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON;
+  process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "test-admin-token";
+  process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON = JSON.stringify({
+    "admin-user": crypto.createHash("sha256").update("test-admin-token").digest("hex"),
+  });
   try {
     migrateTenantIsolation(db);
     const now = new Date().toISOString();
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("enterprise-1","seller","Enterprise One",now);
     db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(?,?,?,'active',?)").run("enterprise-1","qc-user","seller_member",now);
-    assert.deepEqual(assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"qc"}),{
-      enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"active",
+    db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(?,?,?,'active',?)").run("enterprise-1","admin-user","seller_admin",now);
+    db.prepare("INSERT INTO enterprise_role_assignments(enterprise_id,user_id,role,status,granted_by,created_at) VALUES(?,?,'enterprise_admin','active',?,?)").run("enterprise-1","admin-user","bootstrap",now);
+    assert.deepEqual(assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",grantedBy:"admin-user"}),{
+      enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"active",grantedBy:"admin-user",
     });
-    assert.equal(db.prepare("SELECT granted_by FROM enterprise_role_assignments WHERE user_id='qc-user' AND role='qc'").get().granted_by,"operator-cli");
-    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"missing-user",role:"warehouse"}),/active membership/);
-    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"root"}),/unsupported enterprise role/);
-  } finally { db.close(); }
+    assert.equal(db.prepare("SELECT granted_by FROM enterprise_role_assignments WHERE user_id='qc-user' AND role='qc'").get().granted_by,"admin-user");
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"missing-user",role:"warehouse",grantedBy:"admin-user"}),/active membership/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"root",grantedBy:"admin-user"}),/unsupported enterprise role/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse"}),/operator ID are required/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"qc-user"}),/operator authorization/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"missing-operator"}),/operator authorization/);
+    process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "invalid-token";
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/operator authorization/);
+    process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "test-admin-token";
+    db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'").run();
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/different active enterprise_admin/);
+  } finally {
+    db.close();
+    if (previousOperatorToken === undefined) delete process.env.ROLE_PROVISIONING_OPERATOR_TOKEN;
+    else process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = previousOperatorToken;
+    if (previousOperatorHashes === undefined) delete process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON;
+    else process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON = previousOperatorHashes;
+  }
 });
 
 test("migration refuses to run without the existing inquiries table", () => {
