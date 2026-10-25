@@ -55,6 +55,13 @@ export function migrateSupplyChain(db) {
         UNIQUE(tenant_id,id), UNIQUE(tenant_id,idempotency_key),
         FOREIGN KEY(tenant_id) REFERENCES tenants(id)
       );
+      CREATE TABLE IF NOT EXISTS processing_losses (
+        id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, movement_id TEXT NOT NULL, parent_lot_id TEXT NOT NULL,
+        quantity_milli INTEGER NOT NULL CHECK(quantity_milli > 0), unit TEXT NOT NULL, reason TEXT NOT NULL,
+        recorded_by TEXT NOT NULL, recorded_at TEXT NOT NULL,
+        FOREIGN KEY(tenant_id,movement_id) REFERENCES inventory_movements(tenant_id,id),
+        FOREIGN KEY(tenant_id,parent_lot_id) REFERENCES supply_lots(tenant_id,id)
+      );
       CREATE TABLE IF NOT EXISTS inventory_entries (
         id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, movement_id TEXT NOT NULL,
         lot_id TEXT NOT NULL, site_id TEXT NOT NULL,
@@ -234,7 +241,12 @@ export function createSupplyChainService(db) {
   function processLot(input) {
     const {tenantId,siteId,inputs,outputs,actorId,idempotencyKey}=input;
     if(!Array.isArray(inputs)||!inputs.length||!Array.isArray(outputs)||!outputs.length) throw new SupplyChainError(400,"processing_inputs_outputs_required");
-    const payload={siteId,inputs,outputs};
+    const lossQuantityMilli=input.lossQuantityMilli??0;
+    if(!Number.isSafeInteger(lossQuantityMilli)||lossQuantityMilli<0) throw new SupplyChainError(400,"invalid_loss_quantity");
+    const totalInput=inputs.reduce((sum,item)=>sum+(Number.isSafeInteger(item?.quantityMilli)?item.quantityMilli:0),0);
+    const totalOutput=outputs.reduce((sum,item)=>sum+(Number.isSafeInteger(item?.quantityMilli)?item.quantityMilli:0),0);
+    if(totalInput!==totalOutput+lossQuantityMilli) throw new SupplyChainError(409,"quantity_reconciliation_failed");
+    const payload={siteId,inputs,outputs,lossQuantityMilli,lossReason:input.lossReason??"process_yield_loss"};
     const outputUnits=new Set(outputs.map(output=>output?.unit));
     if (outputUnits.size>1 || inputs.some(input=>!outputUnits.has(input?.unit))) throw new SupplyChainError(409,"unit_mismatch");
     return inTxn(()=>{
@@ -274,8 +286,14 @@ export function createSupplyChainService(db) {
         }
         if(remaining>0) throw new SupplyChainError(409,"quantity_reconciliation_failed");
       }
+      const recordedLoss=remainingInputs.reduce((sum,item)=>sum+item.remaining,0);
+      if(recordedLoss!==lossQuantityMilli) throw new SupplyChainError(409,"quantity_reconciliation_failed");
+      for(const loss of remainingInputs.filter(item=>item.remaining>0)) {
+        db.prepare("INSERT INTO processing_losses(id,tenant_id,movement_id,parent_lot_id,quantity_milli,unit,reason,recorded_by,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)")
+          .run(id(),tenantId,movement.id,loss.lotId,loss.remaining,inputs.find(item=>item.lotId===loss.lotId).unit,String(input.lossReason??"process_yield_loss"),actorId,now());
+      }
       postMovement(movement.id,tenantId);
-      return {movementId:movement.id,duplicate:false,childLots};
+      return {movementId:movement.id,duplicate:false,childLots,lossQuantityMilli};
     })();
   }
   function inspectLot(input) {
@@ -396,8 +414,9 @@ export function createSupplyChainService(db) {
       WHERE chain.depth<100 AND instr(chain.path,'|'||c.id||'|')=0
     ) SELECT lotId,lotCode,depth FROM chain ORDER BY depth`).all(input.tenantId,l.id,input.tenantId);
     const inspections=db.prepare("SELECT id,inspection_type AS inspectionType,result,inspected_at AS inspectedAt,inspector_id AS inspectorId,evidence_ref AS evidenceRef FROM quality_inspections WHERE tenant_id=? AND lot_id=? ORDER BY inspected_at").all(input.tenantId,l.id);
+    const losses=db.prepare("SELECT id,movement_id AS movementId,quantity_milli AS quantityMilli,unit,reason,recorded_by AS recordedBy,recorded_at AS recordedAt FROM processing_losses WHERE tenant_id=? AND parent_lot_id=? ORDER BY recorded_at").all(input.tenantId,l.id);
     const handovers=db.prepare("SELECT id,handover_code AS handoverCode,status,from_site_id AS fromSiteId,to_site_id AS toSiteId,quantity_milli AS quantityMilli,unit,dispatch_at AS dispatchAt,received_at AS receivedAt,discrepancy_note AS discrepancyNote FROM handovers WHERE tenant_id=? AND lot_id=? ORDER BY created_at").all(input.tenantId,l.id);
-    return {lot:{id:l.id,lotCode:l.lot_code,productId:l.product_id,commodityName:l.commodity_name,status:l.current_status,unit:l.unit},parents,children,ancestors,descendants,inspections,handovers};
+    return {lot:{id:l.id,lotCode:l.lot_code,productId:l.product_id,commodityName:l.commodity_name,status:l.current_status,unit:l.unit},parents,children,ancestors,descendants,inspections,handovers,losses};
   }
   return {createSite,receiveLot,moveStock,processLot,inspectLot,prepareHandover,dispatchHandover,receiveHandover,addEvidence,stock,trace};
 }
