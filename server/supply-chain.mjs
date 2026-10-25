@@ -236,6 +236,8 @@ export function createSupplyChainService(db) {
     const {tenantId,siteId,inputs,outputs,actorId,idempotencyKey}=input;
     if(!Array.isArray(inputs)||!inputs.length||!Array.isArray(outputs)||!outputs.length) throw new SupplyChainError(400,"processing_inputs_outputs_required");
     const payload={siteId,inputs,outputs};
+    const outputUnits=new Set(outputs.map(output=>output?.unit));
+    if (outputUnits.size>1 || inputs.some(input=>!outputUnits.has(input?.unit))) throw new SupplyChainError(409,"unit_mismatch");
     return inTxn(()=>{
       const target=requireSite(tenantId,siteId);
       if(target.siteType!=="packing_house") throw new SupplyChainError(409,"packing_house_required");
@@ -250,6 +252,7 @@ export function createSupplyChainService(db) {
         insertEntry(tenantId,movement.id,entry.lotId,siteId,-entry.quantityMilli,entry.unit);
       }
       const childLots=[];
+      const remainingInputs=inputs.map(input=>({lotId:input.lotId,remaining:input.quantityMilli}));
       for(const output of outputs){
         positiveInt(output.quantityMilli);
         if(!output.lotCode||!output.productId||!output.commodityName||!output.unit) throw new SupplyChainError(400,"invalid_output_lot");
@@ -259,16 +262,18 @@ export function createSupplyChainService(db) {
         insertEntry(tenantId,movement.id,lotId,siteId,output.quantityMilli,output.unit);
         childLots.push({id:lotId,lotCode:output.lotCode,quantityMilli:output.quantityMilli,unit:output.unit});
         let remaining=output.quantityMilli;
-        for(const inputLot of inputs){
+        for(const inputLot of remainingInputs){
           const parent=requireLot(tenantId,inputLot.lotId);
-          const qty=Math.min(inputLot.quantityMilli,remaining);
+          const qty=Math.min(inputLot.remaining,remaining);
           if(qty>0){
             db.prepare("INSERT INTO lot_genealogy(id,tenant_id,parent_lot_id,child_lot_id,relationship,input_quantity_milli,output_quantity_milli,unit,recorded_by,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
               .run(id(),tenantId,parent.id,lotId,"processed_into",qty,qty,output.unit,actorId,time);
+            inputLot.remaining-=qty;
             remaining-=qty;
           }
           if(remaining<=0) break;
         }
+        if(remaining>0) throw new SupplyChainError(409,"quantity_reconciliation_failed");
       }
       postMovement(movement.id,tenantId);
       return {movementId:movement.id,duplicate:false,childLots};
