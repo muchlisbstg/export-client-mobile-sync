@@ -337,6 +337,24 @@ export function createSupplyChainService(db) {
       LEFT JOIN inventory_movements m ON m.tenant_id=e.tenant_id AND m.id=e.movement_id
       WHERE l.tenant_id=? GROUP BY l.id ORDER BY l.lot_code`).all(input.siteId,input.tenantId);
   }
+  function addEvidence(input) {
+    const {tenantId,entityType,entityId,evidenceType,storageUri,actorId}=input;
+    if(!["lot","inspection","movement","handover"].includes(entityType)||![tenantId,entityId,evidenceType,storageUri,actorId].every(v=>typeof v==="string"&&v.trim())) throw new SupplyChainError(400,"invalid_evidence");
+    let exists=false;
+    if(entityType==="lot") exists=Boolean(db.prepare("SELECT 1 FROM supply_lots WHERE tenant_id=? AND id=?").get(tenantId,entityId));
+    if(entityType==="inspection") exists=Boolean(db.prepare("SELECT 1 FROM quality_inspections WHERE tenant_id=? AND id=?").get(tenantId,entityId));
+    if(entityType==="movement") exists=Boolean(db.prepare("SELECT 1 FROM inventory_movements WHERE tenant_id=? AND id=?").get(tenantId,entityId));
+    if(entityType==="handover") exists=Boolean(db.prepare("SELECT 1 FROM handovers WHERE tenant_id=? AND id=?").get(tenantId,entityId));
+    if(!exists) throw new SupplyChainError(404,"evidence_entity_not_found");
+    if(input.contentSha256 && !/^[a-f0-9]{64}$/i.test(input.contentSha256)) throw new SupplyChainError(400,"invalid_evidence_hash");
+    let parsed;
+    try { parsed=new URL(storageUri); } catch { throw new SupplyChainError(400,"invalid_evidence_uri"); }
+    if(!["https:","storage:"].includes(parsed.protocol)) throw new SupplyChainError(400,"invalid_evidence_uri");
+    const evidenceId=id(),time=now();
+    db.prepare("INSERT INTO supply_evidence(id,tenant_id,entity_type,entity_id,evidence_type,storage_uri,content_sha256,captured_at,uploaded_by,metadata_json,retention_until,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
+      .run(evidenceId,tenantId,entityType,entityId,evidenceType,storageUri,input.contentSha256??null,input.capturedAt??time,actorId,JSON.stringify(input.metadata??{}),input.retentionUntil??null,time);
+    return {id:evidenceId,entityType,entityId,evidenceType,contentSha256:input.contentSha256??null,capturedAt:input.capturedAt??time,uploadedBy:actorId};
+  }
   function trace(input) {
     const l=requireLot(input.tenantId,input.lotId);
     const parents=db.prepare(`SELECT p.id AS lotId,p.lot_code AS lotCode,g.relationship,g.input_quantity_milli AS inputQuantityMilli,g.unit FROM lot_genealogy g JOIN supply_lots p ON p.tenant_id=g.tenant_id AND p.id=g.parent_lot_id WHERE g.tenant_id=? AND g.child_lot_id=?`).all(input.tenantId,l.id);
@@ -345,5 +363,5 @@ export function createSupplyChainService(db) {
     const handovers=db.prepare("SELECT id,handover_code AS handoverCode,status,from_site_id AS fromSiteId,to_site_id AS toSiteId,quantity_milli AS quantityMilli,unit,dispatch_at AS dispatchAt,received_at AS receivedAt,discrepancy_note AS discrepancyNote FROM handovers WHERE tenant_id=? AND lot_id=? ORDER BY created_at").all(input.tenantId,l.id);
     return {lot:{id:l.id,lotCode:l.lot_code,productId:l.product_id,commodityName:l.commodity_name,status:l.current_status,unit:l.unit},parents,children,inspections,handovers};
   }
-  return {createSite,receiveLot,moveStock,processLot,inspectLot,prepareHandover,dispatchHandover,receiveHandover,stock,trace};
+  return {createSite,receiveLot,moveStock,processLot,inspectLot,prepareHandover,dispatchHandover,receiveHandover,addEvidence,stock,trace};
 }
