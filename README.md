@@ -167,20 +167,18 @@ Migrasi skema dan tabel role:
 node scripts/migrate-tenant-isolation.mjs server/data/api.sqlite
 ```
 
-Setelah enterprise dan membership pengguna dibuat melalui proses provisioning operator yang disetujui, berikan peran eksplisit melalui CLI berikut:
+Provisioning peran membutuhkan target dengan membership aktif dan pemberi peran yang berbeda, memiliki membership aktif serta role `enterprise_admin` aktif pada enterprise yang sama, dan token operator yang cocok dengan hash khusus operator. Token dibaca dari environment, bukan argumen command line. Simpan token dan peta hash di konfigurasi rahasia yang dikelola terpisah dari operator yang menjalankan perintah.
+
+Contoh untuk administrator yang sudah di-bootstrap melalui prosedur terkontrol:
 
 ```bash
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> enterprise_admin
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> buyer
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> seller
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> supplier
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> warehouse
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> qc
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> logistics
-SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> auditor
+export SINGLE_ENTERPRISE_ID=enterprise-main
+export ROLE_PROVISIONING_OPERATOR_TOKEN='<token-operator>'
+export ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON='{"<admin-user-id>":"<sha256-token-hash>"}'
+node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <target-user-id> buyer <admin-user-id>
 ```
 
-Ganti `enterprise-main` dan `<supabase-user-id>` dengan nilai yang benar. Perintah ini hanya memberikan peran kepada pengguna yang sudah mempunyai membership aktif di enterprise tersebut; perintah tidak membuat enterprise atau membership. Jalankan sebagai operator yang berwenang, pada database yang benar, setelah backup yang sesuai. Jangan mengirim service-role key atau kredensial ke aplikasi mobile. Kolom `granted_by` mencatat `operator-cli`, bukan identitas operator OS yang terverifikasi.
+Hash token dapat dihitung dengan Node.js menggunakan SHA-256 setelah token disetel di environment. Peta hash harus berasal dari konfigurasi rahasia yang dilindungi, bukan dibuat atau diubah oleh operator yang sedang menjalankan assignment. CLI tidak membuat enterprise, membership, atau administrator pertama; bootstrap awal memerlukan prosedur terkontrol terpisah. Jangan mengirim service-role key atau kredensial ke aplikasi mobile. Kolom `granted_by` mencatat ID operator yang lolos pemeriksaan token dan membership.
 
 | Peran | Cakupan utama API |
 |---|---|
