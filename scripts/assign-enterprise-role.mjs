@@ -4,9 +4,9 @@ import { pathToFileURL } from "node:url";
 
 const allowedRoles = new Set(["enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"]);
 
-export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy }) {
-  if (!enterpriseId?.trim() || !userId?.trim() || !grantedBy?.trim()) {
-    throw new Error("enterpriseId, userId, and grantedBy are required");
+export function assignEnterpriseRole(db, { enterpriseId, userId, role }) {
+  if (!enterpriseId?.trim() || !userId?.trim()) {
+    throw new Error("enterpriseId and userId are required");
   }
   if (!allowedRoles.has(role)) throw new Error("unsupported enterprise role");
   const enterprise = db.prepare("SELECT id,status FROM tenants WHERE id=?").get(enterpriseId);
@@ -18,15 +18,15 @@ export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy
     VALUES (?,?,?,'active',?,?)
     ON CONFLICT(enterprise_id,user_id,role)
     DO UPDATE SET status='active',granted_by=excluded.granted_by,created_at=excluded.created_at`)
-    .run(enterpriseId,userId,role,grantedBy,new Date().toISOString());
+    .run(enterpriseId,userId,role,"operator-cli",new Date().toISOString());
   return { enterpriseId, userId, role, status: "active" };
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  const [dbPath, enterpriseId, userId, role, grantedBy] = process.argv.slice(2);
+  const [dbPath, enterpriseId, userId, role] = process.argv.slice(2);
   const configuredId = String(process.env.SINGLE_ENTERPRISE_ID ?? "").trim();
-  if (!dbPath || !enterpriseId || !userId || !role || !grantedBy) {
-    process.stderr.write("Usage: SINGLE_ENTERPRISE_ID=<id> node scripts/assign-enterprise-role.mjs <db-path> <enterprise-id> <user-id> <role> <granted-by-user-id>\n");
+  if (!dbPath || !enterpriseId || !userId || !role) {
+    process.stderr.write("Usage: SINGLE_ENTERPRISE_ID=<id> node scripts/assign-enterprise-role.mjs <db-path> <enterprise-id> <user-id> <role>\n");
     process.exitCode = 2;
   } else if (!configuredId || configuredId !== enterpriseId) {
     process.stderr.write("Refusing assignment: enterprise ID must exactly match configured SINGLE_ENTERPRISE_ID\n");
