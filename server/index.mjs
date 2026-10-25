@@ -296,7 +296,7 @@ export function createServer(options = {}) {
 
   function tenantSchemaReady() {
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => row.name));
-    if (!["tenants", "tenant_memberships", "commercial_transactions"].every((name) => tables.has(name))) return false;
+    if (!["tenants", "tenant_memberships", "enterprise_role_assignments", "commercial_transactions"].every((name) => tables.has(name))) return false;
     const columns = new Set(db.prepare("PRAGMA table_info(inquiries)").all().map((row) => row.name));
     return ["buyer_tenant_id", "seller_tenant_id", "tenant_migration_state"].every((name) => columns.has(name));
   }
