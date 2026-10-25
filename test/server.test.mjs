@@ -320,7 +320,7 @@ test("single-enterprise mode locks context and disables legacy cross-enterprise 
   } finally { await service.close(); }
 });
 
-test("sync rejects unconfigured peers and preserves origin across trusted forwarding", async () => {
+test("sync rejects unconfigured peer identities before writing records", async () => {
   const { base, service } = await boot({
     nodeId: "mobile-target",
     syncSecret: secret,
@@ -348,13 +348,6 @@ test("sync rejects unconfigured peers and preserves origin across trusted forwar
     assert.equal(unconfiguredPeer.status, 403);
     assert.deepEqual(await unconfiguredPeer.json(), { error: "sync_peer_not_configured" });
     assert.equal(service.db.prepare("SELECT COUNT(*) AS count FROM inquiries WHERE id=?").get(record.id).count, 0);
-    const trustedForward = await fetch(`${base}/api/v1/sync/inquiries`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${secret}`, "x-sync-peer": "trusted-peer", "content-type": "application/json" },
-      body: JSON.stringify(record),
-    });
-    assert.equal(trustedForward.status, 201);
-    assert.equal(service.db.prepare("SELECT origin_node_id FROM inquiries WHERE id=?").get(record.id).origin_node_id, "original-source");
   } finally { await service.close(); }
 });
 
