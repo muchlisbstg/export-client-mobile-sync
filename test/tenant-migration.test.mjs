@@ -33,7 +33,7 @@ test("migration is idempotent and creates tenant model tables", () => {
   try {
     assert.doesNotThrow(() => migrateTenantIsolation(db));
     assert.doesNotThrow(() => migrateTenantIsolation(db));
-    for (const table of ["tenants","tenant_memberships","commercial_transactions","tenant_sync_outbox"]) {
+    for (const table of ["tenants","tenant_memberships","enterprise_role_assignments","commercial_transactions","tenant_sync_outbox"]) {
       assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
     }
   } finally { db.close(); }
