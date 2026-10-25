@@ -402,3 +402,115 @@ Navigasi akhir perlu disesuaikan dengan hasil riset pengguna dan hak akses tiap 
 - Offline-first perlu diverifikasi pada UI mobile dan mekanisme sync; outbox backend saja tidak membuktikan aplikasi dapat beroperasi penuh tanpa jaringan.
 - Notifikasi push, scanner QR/barcode, kamera, dan laporan UI perlu diuji pada perangkat nyata atau emulator yang didukung.
 - README ini adalah spesifikasi kebutuhan produk dan checklist pengujian. Status implementasi harus dinilai dari kode, hasil test, workflow CI terbaru, dan bukti pada commit yang sama; belum berarti aplikasi siap produksi.
+
+
+## Fitur Buyer dan Seller
+
+Fitur buyer/seller adalah kebutuhan produk yang direncanakan untuk memperluas aplikasi dari pencatatan operasional supply chain menjadi platform transaksi bisnis B2B. Bagian ini mendefinisikan pengalaman dan kontrol yang dibutuhkan; pencantuman di README **tidak berarti fitur marketplace, quotation, order, pembayaran, atau chat sudah diimplementasikan**.
+
+### 1. Model peran yang fleksibel
+
+- Satu akun pengguna dapat memiliki keanggotaan pada satu atau beberapa organisasi/tenant, sesuai undangan dan otorisasi yang sah.
+- Organisasi dapat bertindak sebagai **Buyer**, **Seller**, atau keduanya, bergantung pada transaksi dan kewenangan yang diberikan.
+- Peran Buyer/Seller ditetapkan dan diperiksa pada konteks organisasi dan transaksi di server; tidak boleh dipercaya hanya karena dikirim dari aplikasi.
+- Pengguna hanya boleh melihat penawaran, pesanan, dokumen, harga privat, pesan, dan bukti yang memang dapat diakses oleh organisasinya.
+- Data buyer dan seller harus terisolasi antartenant; hubungan antarpihak dibatasi pada transaksi yang sah.
+- Perubahan peran, pergantian organisasi aktif, dan pemberian akses harus diaudit. UI harus menampilkan organisasi dan peran aktif secara jelas agar pengguna tidak salah bertindak.
+
+### 2. Fitur Buyer — Pembeli
+
+| Fitur | Kebutuhan Buyer |
+|---|---|
+| Profil perusahaan | Mengelola profil pembeli, alamat penagihan/pengiriman, kontak bisnis, negara, serta status verifikasi yang relevan. |
+| Katalog produk | Menelusuri dan mencari produk; melihat spesifikasi, grade, asal, kemasan, minimum order, ketersediaan indikatif, dan informasi seller yang boleh dipublikasikan. |
+| Permintaan penawaran (RFQ) | Mengirim permintaan dengan produk/grade, jumlah, tujuan, target tanggal, kebutuhan dokumen, dan persyaratan pengiriman. |
+| Perbandingan penawaran | Membandingkan harga, mata uang, kuantitas, masa berlaku, lead time, incoterms, biaya yang tercakup, serta syarat pembayaran secara transparan. |
+| Negosiasi | Mengajukan pertanyaan atau revisi syarat dan menyimpan riwayat perubahan penawaran. |
+| Pesanan pembelian | Membuat atau mengonfirmasi purchase order setelah penawaran dan syarat disepakati; melihat nomor serta status order. |
+| Pelacakan pemenuhan | Memantau persiapan lot, packing, inspeksi, dokumen, dispatch, dan penerimaan sesuai izin. |
+| Dokumen transaksi | Mengakses kontrak, invoice, packing list, sertifikat, atau dokumen lain hanya jika tersedia, relevan, dan dibagikan secara sah. |
+| Penerimaan dan selisih | Mengonfirmasi kuantitas/kondisi yang diterima serta melaporkan kekurangan, kerusakan, atau ketidaksesuaian dengan bukti. |
+| Komplain dan penyelesaian | Membuka kasus, melampirkan bukti, melihat status penyelesaian, dan menyimpan keputusan/komunikasi yang dapat diaudit. |
+| Pembayaran | Melihat syarat dan instruksi pembayaran yang disetujui, status pembayaran yang telah diverifikasi, serta refund/reversal jika relevan; jangan menganggap screenshot sebagai bukti settlement. |
+| Riwayat dan favorit | Melihat transaksi sebelumnya, menyimpan produk/seller favorit, dan mengulang permintaan dengan konfirmasi ulang atas syarat terkini. |
+
+### 3. Fitur Seller — Penjual
+
+| Fitur | Kebutuhan Seller |
+|---|---|
+| Profil perusahaan | Mengelola profil eksportir/pemasok, kontak, lokasi, negara asal, dan status verifikasi. Status verifikasi bukan sertifikasi atau jaminan kepatuhan. |
+| Katalog dan penawaran produk | Membuat serta memperbarui SKU, komoditas, spesifikasi, grade, asal, kemasan, minimum order, lead time, foto, dan dokumen yang diizinkan. |
+| Ketersediaan stok | Melihat stok dan lot yang dapat dialokasikan; ketersediaan harus berasal dari sumber data yang otoritatif dan tidak boleh melebihi stok yang benar-benar tersedia. |
+| Manajemen RFQ | Menerima RFQ yang ditujukan kepadanya, meminta klarifikasi, menolak dengan alasan yang sesuai, atau menyiapkan quotation. |
+| Quotation | Menetapkan harga, mata uang, kuantitas, masa berlaku, lead time, incoterms, biaya yang tercakup/tidak tercakup, dan syarat pembayaran; perubahan harus menghasilkan versi baru atau riwayat yang jelas. |
+| Manajemen pesanan | Meninjau pesanan masuk, menerima atau menolak sesuai kewenangan, mencatat alasan, dan mengelola perubahan atau pembatalan yang disepakati. |
+| Pemenuhan pesanan | Mengalokasikan lot, menyiapkan packing, mengatur inspeksi, mengumpulkan dokumen, dan memperbarui milestone pengiriman. |
+| Dokumen dan traceability | Menghubungkan lot asal, hasil pemrosesan, inspeksi, dan dokumen relevan ke order; membatasi akses dokumen sensitif. |
+| Pengiriman | Menjadwalkan pengiriman, mencatat dispatch dan bukti serah terima, serta merespons perbedaan jumlah atau kondisi. |
+| Faktur dan pembayaran | Melihat invoice, jatuh tempo, pembayaran yang terverifikasi, biaya, refund/credit note, dan rekonsiliasi yang diizinkan. |
+| Penanganan komplain | Menerima dan menanggapi klaim buyer, mengirim bukti, mengusulkan tindakan koreksi, dan mencatat hasil penyelesaian. |
+| Analitik | Melihat RFQ, tingkat konversi, pesanan aktif, ketepatan pemenuhan, dan ringkasan transaksi sesuai hak akses. |
+
+### 4. Alur transaksi Buyer ↔ Seller
+
+Alur yang disarankan untuk implementasi bertahap:
+
+1. Seller membuat profil dan katalog; informasi yang memerlukan verifikasi ditandai dengan status yang jelas.
+2. Buyer mencari produk atau mengirim RFQ.
+3. Seller menerima RFQ, mengajukan pertanyaan bila perlu, lalu menerbitkan quotation berversi dengan masa berlaku dan syarat lengkap.
+4. Buyer menerima, menolak, atau meminta revisi. Setiap perubahan syarat dicatat dan ditautkan ke versi yang benar.
+5. Setelah kedua pihak menyetujui syarat, sistem membuat order dengan snapshot produk, jumlah, harga, mata uang, incoterms, jadwal, dan syarat pembayaran yang disepakati.
+6. Backend memvalidasi stok/lot, kewenangan, batas tenant, dan gerbang yang relevan sebelum mengizinkan pemenuhan.
+7. Seller menyiapkan lot dan dokumen; QC serta proses supply chain mengikuti status dan otorisasi masing-masing.
+8. Pengiriman dan penerimaan dicatat. Buyer mengonfirmasi penerimaan atau membuka klaim selisih.
+9. Pembayaran, refund, dan settlement ditampilkan hanya berdasarkan bukti yang terverifikasi dari sumber yang berwenang.
+10. Order ditutup setelah syarat penutupan terpenuhi; seluruh perubahan, persetujuan, dokumen, dan sengketa tetap dapat ditelusuri sesuai kebijakan retensi.
+
+Status order yang disarankan: `draft`, `rfq_submitted`, `quoted`, `negotiation`, `accepted`, `awaiting_payment` (jika berlaku), `confirmed`, `fulfillment`, `ready_to_ship`, `shipped`, `partially_received`, `received`, `disputed`, `completed`, `cancelled`. Status aktual harus ditentukan oleh state machine backend; klien tidak boleh mengubah status secara bebas. Daftar ini adalah rancangan awal yang perlu divalidasi bersama kontrak API.
+
+### 5. Navigasi aplikasi dan perbedaan pengalaman
+
+- **Mode Buyer:** Beranda Buyer, Katalog, RFQ Saya, Penawaran, Pesanan, Pengiriman, Dokumen, Komplain, dan Profil.
+- **Mode Seller:** Beranda Seller, Katalog Saya, RFQ Masuk, Quotation, Pesanan Masuk, Pemenuhan, Lot/Stok, Pengiriman, Invoice/Pembayaran, Komplain, dan Profil.
+- **Organisasi dengan kedua peran:** pengguna dapat mengganti konteks Buyer/Seller melalui pemilih peran atau organisasi yang jelas, tetapi hanya untuk peran yang telah diotorisasi.
+- Menu yang tidak relevan boleh disembunyikan untuk menyederhanakan UI; setiap endpoint tetap wajib memeriksa akses di backend.
+
+### 6. Kontrol transaksi, pembayaran, dan Syariah
+
+- **Pemisahan pihak:** buyer tidak boleh mengubah quotation, stok, inspeksi, atau status pengiriman milik seller; seller tidak boleh mengubah konfirmasi penerimaan buyer.
+- **Persetujuan dua pihak:** penerimaan quotation dan perubahan material order perlu merekam aktor, waktu, versi syarat, dan status persetujuan kedua pihak.
+- **Harga dan mata uang:** simpan nominal dengan representasi presisi yang sesuai, currency eksplisit, serta rincian biaya; jangan menggunakan floating-point biner untuk perhitungan uang.
+- **Stok dan reservasi:** order tidak boleh menyebabkan over-allocation. Reservasi, pelepasan reservasi, pembatalan, dan expiry harus atomik dan dapat direkonsiliasi.
+- **Idempotensi dan konkurensi:** retry RFQ, quotation acceptance, order creation, payment event, atau receipt confirmation tidak boleh membuat rekaman ganda; konflik versi harus ditangani secara eksplisit.
+- **Dokumen dan privasi:** hanya pihak yang berwenang dapat membaca kontrak, identitas bisnis, alamat, dokumen perdagangan, dan bukti pembayaran; unduhan serta perubahan akses harus diaudit.
+- **Pembayaran:** jangan memproses atau menandai pembayaran settled berdasarkan pernyataan klien saja. Verifikasi bank/provider, webhook, atau rekonsiliasi manual yang terotorisasi.
+- **Tata kelola Syariah:** akad, kepemilikan/otoritas menjual, spesifikasi barang, harga, biaya/komisi, risiko, delivery, refund, pembatalan, serta mekanisme pembiayaan harus ditinjau oleh penasihat Syariah kompeten sesuai transaksi. Label atau UI Buyer/Seller bukan bukti kepatuhan Syariah.
+- **Keputusan manusia:** verifikasi perusahaan, pengecualian compliance, persetujuan akad, sengketa, dan keputusan berisiko tidak boleh disetujui otomatis oleh AI.
+
+### 7. Acceptance tests Buyer/Seller sebelum rilis
+
+- [ ] Buyer hanya dapat melihat katalog publik/penawaran yang memang ditujukan atau dibagikan kepadanya.
+- [ ] Seller hanya dapat mengelola katalog, RFQ, quotation, dan order milik tenant yang diotorisasi.
+- [ ] Akun dengan dua peran dapat berpindah konteks hanya jika membership untuk konteks tersebut sah.
+- [ ] Manipulasi ID RFQ, quotation, order, dokumen, invoice, atau shipment tidak memberi akses lintas-tenant.
+- [ ] Buyer tidak dapat mengubah quotation atau status pemenuhan Seller; Seller tidak dapat memalsukan penerimaan Buyer.
+- [ ] Perubahan quotation/order menghasilkan versi dan audit trail; persetujuan terikat ke versi yang benar.
+- [ ] Dua permintaan order bersamaan tidak dapat mengalokasikan stok melebihi jumlah yang tersedia.
+- [ ] Retry order, konfirmasi penerimaan, dan event pembayaran tidak membuat transaksi ganda.
+- [ ] Pembatalan, refund, selisih, dan sengketa memiliki alur status, alasan, dan otorisasi yang teruji.
+- [ ] Dokumen dan bukti pembayaran tidak dapat diakses oleh pengguna yang tidak berwenang.
+- [ ] Status settled hanya muncul setelah verifikasi sumber pembayaran yang sah.
+- [ ] Persyaratan Syariah/legal yang memerlukan review manusia tidak dapat dilewati melalui API mobile.
+- [ ] Test negatif tanpa autentikasi, lintas-tenant, dan eskalasi peran lulus pada backend.
+- [ ] Seluruh test dan job CI diperiksa pada commit SHA kandidat yang sama sebelum rilis.
+
+### 8. Prioritas implementasi Buyer/Seller
+
+| Prioritas | Cakupan |
+|---|---|
+| **B0 — Fondasi** | Model organisasi/membership, role matrix Buyer/Seller, tenant isolation, autentikasi, audit trail, dan kebijakan akses dokumen. |
+| **B1 — Perdagangan dasar** | Profil perusahaan, katalog, RFQ, quotation berversi, persetujuan kedua pihak, dan order state machine. |
+| **B2 — Pemenuhan supply chain** | Reservasi stok/lot, QC, dokumen, shipment, konfirmasi penerimaan, selisih, dan klaim. |
+| **B3 — Komersial lanjutan** | Invoice, payment-provider integration, rekonsiliasi, refund, analitik, notifikasi, dan integrasi eksternal setelah kontrak dan sandbox tersedia. |
+
+Implementasi harus tetap mengikuti prinsip branch dan pull request terpisah, pengujian dengan data sintetis, serta tidak melakukan merge ke `main` atau deployment tanpa persetujuan yang diwajibkan.
