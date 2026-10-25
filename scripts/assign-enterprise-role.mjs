@@ -1,14 +1,33 @@
 import Database from "better-sqlite3";
+import crypto from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const allowedRoles = new Set(["enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"]);
+
+function hasValidOperatorToken(operatorId, token) {
+  if (!token) return false;
+  let tokenHashes;
+  try {
+    tokenHashes = JSON.parse(process.env.ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON ?? "{}");
+  } catch {
+    return false;
+  }
+  const expectedHex = tokenHashes?.[operatorId];
+  if (typeof expectedHex !== "string" || !/^[a-f0-9]{64}$/i.test(expectedHex)) return false;
+  const actual = crypto.createHash("sha256").update(token).digest();
+  const expected = Buffer.from(expectedHex, "hex");
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
 
 export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy }) {
   if (!enterpriseId?.trim() || !userId?.trim() || !grantedBy?.trim()) {
     throw new Error("enterpriseId, userId, and authorized operator ID are required");
   }
   if (!allowedRoles.has(role)) throw new Error("unsupported enterprise role");
+  if (!hasValidOperatorToken(grantedBy, process.env.ROLE_PROVISIONING_OPERATOR_TOKEN)) {
+    throw new Error("valid operator authorization token is required");
+  }
   const enterprise = db.prepare("SELECT id,status FROM tenants WHERE id=?").get(enterpriseId);
   if (!enterprise || enterprise.status !== "active") throw new Error("enterprise is missing or inactive");
   const membership = db.prepare("SELECT status FROM tenant_memberships WHERE tenant_id=? AND user_id=?").get(enterpriseId,userId);
@@ -39,7 +58,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   const [dbPath, enterpriseId, userId, role, grantedBy] = process.argv.slice(2);
   const configuredId = String(process.env.SINGLE_ENTERPRISE_ID ?? "").trim();
   if (!dbPath || !enterpriseId || !userId || !role || !grantedBy) {
-    process.stderr.write("Usage: SINGLE_ENTERPRISE_ID=<id> node scripts/assign-enterprise-role.mjs <db-path> <enterprise-id> <user-id> <role> <active-enterprise-admin-user-id>\n");
+    process.stderr.write("Usage: SINGLE_ENTERPRISE_ID=<id> ROLE_PROVISIONING_OPERATOR_TOKEN=<token> ROLE_PROVISIONING_OPERATOR_TOKEN_HASHES_JSON=<operator-id-to-sha256-map> node scripts/assign-enterprise-role.mjs <db-path> <enterprise-id> <user-id> <role> <active-enterprise-admin-user-id>\n");
     process.exitCode = 2;
   } else if (!configuredId || configuredId !== enterpriseId) {
     process.stderr.write("Refusing assignment: enterprise ID must exactly match configured SINGLE_ENTERPRISE_ID\n");
