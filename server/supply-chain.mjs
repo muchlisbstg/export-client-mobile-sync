@@ -181,7 +181,7 @@ export function createSupplyChainService(db) {
     if (count < 1) throw new SupplyChainError(400,"empty_movement");
     db.prepare("UPDATE inventory_movements SET status='posted' WHERE tenant_id=? AND id=? AND status='draft'").run(tenantId,movementId);
   }
-  const inTxn = (fn) => db.transaction(fn).immediate();
+  const inTxn = (fn) => db.transaction(fn).immediate;
 
   function createSite(input) {
     const {tenantId,siteCode,name,siteType,actorId} = input;
