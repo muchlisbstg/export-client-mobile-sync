@@ -16,6 +16,8 @@ Aplikasi klien mobile untuk katalog produk dan pengiriman **inquiry** kepada bac
 - [Menjalankan aplikasi](#menjalankan-aplikasi)
 - [Pengujian dan quality gates](#pengujian-dan-quality-gates)
 - [Kepatuhan ekspor global dan Syariah](#kepatuhan-ekspor-global-dan-syariah)
+- [Pembayaran ekspor, sampel, dan ketentuan komersial](#pembayaran-ekspor-sampel-dan-ketentuan-komersial)
+- [Audit kekurangan README](#audit-kekurangan-readme)
 - [Batasan MVP dan langkah lanjutan](#batasan-mvp-dan-langkah-lanjutan)
 
 ## Ringkasan
@@ -223,7 +225,69 @@ Prinsip arsitektur:
 
 Dokumen desain dan backlog rinci: [Global Export Compliance & Shariah Architecture](docs/global-export-compliance-shariah-architecture.md). Dokumen tersebut menetapkan target arsitektur, model data, state transaksi, kontrol keamanan, acceptance criteria, dan tahapan rollout. Ini adalah persyaratan desain—bukan bukti bahwa kontrol telah diimplementasikan, perusahaan telah patuh, atau sertifikasi Syariah telah diperoleh.
 
-## Batasan MVP dan langkah lanjutan
+## Pembayaran ekspor, sampel, dan ketentuan komersial
+
+Platform target harus mendukung opsi pembayaran internasional dan alur sampel, tetapi **opsi yang tampil harus bergantung pada negara, produk, profil pihak, kontrak, bank/provider, dan hasil review legal serta Syariah**. Tidak ada metode pembayaran yang otomatis patuh Syariah hanya karena nama atau penyedianya.
+
+Rancangan rinci dan acceptance criteria ada di [Export Payment, Samples & Commercial Terms](docs/export-payment-samples-shariah.md).
+
+### Opsi pembayaran yang perlu didukung sebagai pilihan konfigurasi
+
+| Opsi | Penggunaan umum | Gap/kontrol yang wajib dilengkapi |
+|---|---|---|
+| Pembayaran di muka / transfer bank | Sampel atau order baru | Verifikasi penerimaan dana dari sumber tepercaya, FX, biaya bank, refund, dan screening pihak |
+| Deposit + pelunasan bertahap | Produksi sesuai pesanan | Milestone, jatuh tempo, pembatalan, refund, alokasi risiko dan review akad |
+| Open account / pembayaran tempo | Buyer terverifikasi | Batas kredit, persetujuan kredit, aging piutang, penagihan dan risiko gagal bayar |
+| Documentary Collection D/P | Dokumen diserahkan setelah pembayaran | Instruksi collection, bank terkait, biaya, tenggat dan risiko buyer tidak membayar |
+| Documentary Collection D/A | Dokumen setelah acceptance janji bayar | Jatuh tempo, kelayakan kredit, risiko exporter, serta review bank/legal |
+| Letter of Credit (LC) | Order dengan proses dokumen bank | Bank penerbit/advising/confirming, expiry, dokumen, tanggal shipment, biaya dan discrepancy handling |
+| Bank guarantee / standby LC | Jaminan pembayaran atau kinerja | Trigger klaim, expiry, issuer, biaya dan review hukum/Syariah |
+| Escrow / payment provider | Jika legal dan provider berizin | Lisensi, negara/currency yang didukung, custody, settlement, refund dan dispute |
+| Islamic trade finance | Produk bank yang sesuai transaksi | Akad aktual, bukti aset/kepemilikan bila relevan, fee/profit, dokumen bank dan persetujuan Syariah |
+
+LC, documentary collection, guarantee, escrow, dan trade finance bukan fitur yang dapat dianggap sudah tersedia hanya karena tercantum dalam README. ICC UCP 600 atau URC 522 berlaku jika dokumen transaksi terkait secara eksplisit memasukkannya sesuai ketentuan yang berlaku; lihat [referensi resmi ICC UCP 600](https://library.iccwbo.org/content/tfb/RULES/tfb-ucp600-rules.htm) dan [panduan pembiayaan perdagangan ICC](https://academy.iccwbo.org/trade-finance/article/what-is-export-financing/).
+
+### Sampel, prototype, dan pengiriman non-bulk
+
+Bedakan secara eksplisit:
+
+- **Sampel berbayar:** harga produk, ongkir, asuransi, bea/pajak, waktu kirim, refund, serta apakah biaya sampel dapat dikreditkan ke pesanan berikutnya.
+- **Sampel gratis:** pihak yang membayar ongkir dan biaya impor, tujuan sampel, nilai pabean yang akurat, serta syarat penggantian/pengembalian.
+- **Prototype / unit evaluasi:** apakah penjualan, pinjaman, konsinyasi, atau ekspor/impor sementara; tetapkan kepemilikan, penggunaan yang diizinkan, IP, tenggat pengembalian/pemusnahan, dan prosedur kepabeanan.
+- **Replacement, warranty, return:** bedakan penggantian tanpa pembayaran, refund, credit note, perbaikan, re-export, dan return-to-origin.
+
+**Gratis tidak otomatis berarti nilai pabean nol atau bebas bea/izin.** Jangan membuat deklarasi “no commercial value” jika tidak akurat atau tidak diizinkan. Kewajiban dokumen ditentukan oleh komoditas, negara, rute, tujuan penggunaan, serta prosedur kepabeanan yang relevan.
+
+### Gerbang Syariah dan pembayaran
+
+Sebelum metode pembayaran diaktifkan untuk transaksi, sistem perlu merekam akad dan versi yang disetujui, pihak dan perannya, dasar harga/currency, jadwal pembayaran, biaya/komisi, tanggung jawab risiko, refund, wanprestasi, serta review Syariah yang relevan. Jangan otomatis menyatakan LC, D/A, biaya jaminan, FX, denda keterlambatan, escrow, atau pembiayaan tertentu patuh Syariah. Penasihat Syariah yang kompeten perlu meninjau struktur dan dokumen sebenarnya.
+
+Pembayaran hanya boleh berstatus **settled** setelah diverifikasi dari bank/provider atau melalui proses manual terotorisasi yang terdokumentasi. Input mobile, screenshot, atau webhook tanpa verifikasi bukan bukti pembayaran. Gunakan idempotency, verifikasi signature webhook, rekonsiliasi, audit trail, dan pencatatan refund/reversal/partial payment. Jangan menyimpan password bank, data kartu mentah, atau secret di aplikasi mobile.
+
+## Audit kekurangan README
+
+Audit ini memeriksa cakupan dokumentasi README yang ada pada branch ini. Label **belum dibuktikan** berarti README belum menjelaskan implementasi atau belum ada bukti CI/hasil uji yang mendukungnya—bukan klaim bahwa kode pasti tidak memilikinya.
+
+| Poin README saat ini | Kekurangan yang ditemukan | Yang perlu ditambahkan / dibuktikan | Prioritas |
+|---|---|---|---|
+| Ringkasan dan katalog demo | Katalog belum mendefinisikan SKU ekspor, HS code, asal, spesifikasi, MOQ, kapasitas, lead time, incoterms, dan status pembatasan | Model produk ekspor dan persetujuan data katalog | P1 |
+| Alur inquiry dan tracking | Belum ada quotation, order, kontrak, approval, amendment, cancellation, dispute, atau acceptance buyer | State machine transaksi dari inquiry sampai penutupan | P1 |
+| API | Endpoint baru health, products, inquiries, tracking, dan peer sync; belum ada kontrak payment, sample, quotation, orders, documents, compliance, atau reviews | OpenAPI/schema, autentikasi/otorisasi, idempotency, versi API dan error contract | P1 |
+| Peer sync | Inquiry replication belum memodelkan authority/source of truth, event schema, outbox reconciliation dan pemisahan data sensitif per tenant | Sinkronisasi event transaksi dengan tenant boundary, provenance dan audit | P1 |
+| Pembayaran ekspor | Belum ada metode pembayaran, jadwal, currency, fee, bank/provider, status settlement, refund/reversal, dispute, atau rekonsiliasi | Payment requirements, provider sandbox, webhook security, idempotency, reconciliation | P1 |
+| Syariah untuk pembayaran | Penyebutan Syariah belum mengatur approval akad per transaksi, financing, guarantee, FX, late payment, agency fee, refund dan bukti reviewer | Akad registry, review workflow, kondisi/expiry dan audit keputusan | P1 |
+| Sampel dan prototype | Belum dibedakan sampel gratis/berbayar, temporary shipment, return, replacement, nilai pabean, biaya, dokumen, tenggat kembali | Sample lifecycle, accurate customs value, document checklist dan return/disposition tracking | P1 |
+| Dokumen ekspor | Belum ada document vault, issuer, expiry, authenticity/verification, versioning, retention, access log atau checklist per corridor | Dokumen persyaratan per negara/komoditas/metode pembayaran | P1 |
+| Regulasi negara | README hanya menetapkan prinsip umum; belum ada corridor/commodity matrix yang berisi sumber resmi dan tanggal efektif | Pilot Indonesia → satu tujuan, HS classification, rule pack yang ditinjau legal | P1 |
+| Keamanan dan tenant | README meminta kontrol, tetapi belum menampilkan hasil test negatif atau bukti isolasi lintas tenant | Bukti autentikasi, object authorization, tenant isolation, rate limit, secret management | P0/P1 |
+| Audit dan persetujuan | Belum ada role matrix atau rekaman persetujuan legal/customs/Syariah di README | Separation of duties, immutable/tamper-evident audit events dan approval evidence | P1 |
+| Operasional/reliability | Belum ada SLO, RPO/RTO, dead-letter, alert, backup restore proof atau incident runbook | Runbook, metrics, recovery tests dan evidence per SHA | P1 |
+| CI/release | README menyebut perintah tes, tetapi bukan bukti run terkini; belum ada bukti build rilis signed atau approval gate | Workflow URL, job outcomes, commit SHA, build artifact/release checklist | P1 |
+| Privasi lintas negara | Belum ada data-flow map, minimisasi dokumen pribadi, retensi per yurisdiksi dan dasar transfer lintas batas | Data classification, retention, legal hold, access/export/correction workflow | P1 |
+| Monitoring perubahan hukum | Belum ada pemilik rule, jadwal review, sumber perubahan, dual approval atau invalidasi clearance | Rule governance, effective dates, versioning, stale-rule fail-safe | P1 |
+
+Daftar di atas adalah audit kekurangan **cakupan README dan bukti yang ditampilkan**, bukan audit lengkap source code. Pembuktian implementasi membutuhkan pemeriksaan file backend, skema database, route, test, workflow CI dan hasil run pada commit yang tepat.
+
 
 Dokumentasi dan implementasi saat ini tidak boleh diperlakukan sebagai bukti kesiapan produksi. Sebelum peluncuran, tutup setidaknya gap berikut:
 
