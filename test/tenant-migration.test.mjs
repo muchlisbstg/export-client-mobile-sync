@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { migrateTenantIsolation } from "../scripts/migrate-tenant-isolation.mjs";
-import { assignEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
+import { assignEnterpriseRole, revokeEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
 
 function legacyDb() {
   const db = new Database(":memory:");
@@ -74,6 +74,13 @@ test("enterprise role provisioning requires active membership and records explic
     process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "test-admin-token";
     db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'").run();
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/different active enterprise_admin/);
+    db.prepare("UPDATE tenant_memberships SET status='active' WHERE user_id='admin-user'").run();
+    assert.deepEqual(revokeEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",revokedBy:"admin-user",reason:"access no longer needed"}),{
+      enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"revoked",revokedBy:"admin-user",
+    });
+    assert.equal(db.prepare("SELECT status FROM enterprise_role_assignments WHERE enterprise_id='enterprise-1' AND user_id='qc-user' AND role='qc'").get().status,"revoked");
+    const revokedAudit=db.prepare("SELECT action,previous_status,new_status,actor_user_id,reason FROM enterprise_role_audit WHERE user_id='qc-user' AND role='qc' ORDER BY occurred_at DESC LIMIT 1").get();
+    assert.deepEqual(revokedAudit,{action:"revoked",previous_status:"active",new_status:"revoked",actor_user_id:"admin-user",reason:"access no longer needed"});
   } finally {
     db.close();
     if (previousOperatorToken === undefined) delete process.env.ROLE_PROVISIONING_OPERATOR_TOKEN;
