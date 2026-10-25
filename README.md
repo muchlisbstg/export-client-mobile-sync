@@ -19,6 +19,8 @@ Aplikasi klien mobile untuk katalog produk dan pengiriman **inquiry** kepada bac
 - [Pembayaran ekspor, sampel, dan ketentuan komersial](#pembayaran-ekspor-sampel-dan-ketentuan-komersial)
 - [Audit kekurangan README](#audit-kekurangan-readme)
 - [Batasan MVP dan langkah lanjutan](#batasan-mvp-dan-langkah-lanjutan)
+- [Kebutuhan Pengguna Aplikasi Mobile Supply Chain](#kebutuhan-pengguna-aplikasi-mobile-supply-chain)
+- [Fitur Buyer dan Seller](#fitur-buyer-dan-seller)
 
 ## Ringkasan
 
