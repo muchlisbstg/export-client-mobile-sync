@@ -47,7 +47,7 @@ test("enterprise role provisioning requires active membership and records explic
     const now = new Date().toISOString();
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("enterprise-1","seller","Enterprise One",now);
     db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(?,?,?,'active',?)").run("enterprise-1","qc-user","seller_member",now);
-    db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(?,?,?,'active',?)").run("enterprise-1","admin-user","admin_member",now);
+    db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(?,?,?,'active',?)").run("enterprise-1","admin-user","seller_admin",now);
     db.prepare("INSERT INTO enterprise_role_assignments(enterprise_id,user_id,role,status,granted_by,created_at) VALUES(?,?,'enterprise_admin','active',?,?)").run("enterprise-1","admin-user","bootstrap",now);
     assert.deepEqual(assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",grantedBy:"admin-user"}),{
       enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"active",grantedBy:"admin-user",
@@ -58,7 +58,7 @@ test("enterprise role provisioning requires active membership and records explic
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse"}),/operator ID are required/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"qc-user"}),/different active enterprise_admin/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"missing-operator"}),/different active enterprise_admin/);
-    db.prepare("UPDATE tenant_memberships SET status='inactive' WHERE user_id='admin-user'");
+    db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'");
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/different active enterprise_admin/);
   } finally { db.close(); }
 });
