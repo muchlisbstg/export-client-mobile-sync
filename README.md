@@ -157,6 +157,46 @@ Alamat umum untuk pengembangan:
 
 Untuk menguji dari perangkat fisik, backend dapat diatur mendengarkan pada `0.0.0.0` melalui `API_HOST`, kemudian `EXPO_PUBLIC_API_URL` diarahkan ke IP LAN komputer. Lakukan ini hanya pada jaringan tepercaya, batasi akses firewall, dan jangan mengekspos API langsung ke internet. Untuk lingkungan non-local, gunakan reverse proxy dengan TLS.
 
+### Runtime single-enterprise dan role-based access control
+
+Backend API yang melayani operasi supply chain kini memerlukan konfigurasi `SINGLE_ENTERPRISE_ID`. ID tersebut harus menunjuk ke satu record enterprise aktif di tabel `tenants`; semua permintaan protected supply-chain memakai konteks tersebut dari konfigurasi server. Header `x-active-tenant-id` yang menunjuk enterprise lain ditolak. Jika konfigurasi belum ada, endpoint protected gagal tertutup dengan `503 single_enterprise_not_configured`.
+
+Migrasi skema dan tabel role:
+
+```bash
+node scripts/migrate-tenant-isolation.mjs server/data/api.sqlite
+```
+
+Setelah enterprise dan membership pengguna dibuat melalui proses provisioning operator yang disetujui, berikan peran eksplisit melalui CLI berikut:
+
+```bash
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> enterprise_admin
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> buyer
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> seller
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> supplier
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> warehouse
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> qc
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> logistics
+SINGLE_ENTERPRISE_ID=enterprise-main node scripts/assign-enterprise-role.mjs server/data/api.sqlite enterprise-main <supabase-user-id> auditor
+```
+
+Ganti `enterprise-main` dan `<supabase-user-id>` dengan nilai yang benar. Perintah ini hanya memberikan peran kepada pengguna yang sudah mempunyai membership aktif di enterprise tersebut; perintah tidak membuat enterprise atau membership. Jalankan sebagai operator yang berwenang, pada database yang benar, setelah backup yang sesuai. Jangan mengirim service-role key atau kredensial ke aplikasi mobile. Kolom `granted_by` mencatat `operator-cli`, bukan identitas operator OS yang terverifikasi.
+
+| Peran | Cakupan utama API |
+|---|---|
+| `enterprise_admin` | Mengelola lokasi dan operasi yang diizinkan admin |
+| `buyer` | Membaca stok dan traceability sesuai kebijakan |
+| `seller` | Membaca traceability dan mendukung alur pemasokan yang diizinkan |
+| `supplier` | Mendaftarkan lot; tidak mendapat akses daftar stok enterprise |
+| `warehouse` | Penerimaan lot, pemrosesan, mutasi dan stok |
+| `qc` | Inspeksi dan pembacaan stok |
+| `logistics` | Mutasi, serah terima, dispatch dan pembacaan operasional |
+| `auditor` | Pembacaan stok/traceability dan pencatatan bukti sesuai izin |
+
+Aplikasi mobile meminta `GET /api/v1/enterprise/session` setelah login dan menampilkan nama enterprise serta daftar peran yang dikembalikan backend. Daftar UI bukan mekanisme otorisasi; setiap endpoint tetap memvalidasi peran di server.
+
+Endpoint tulis transaksi komersial lama yang mengharuskan buyer dan seller menjadi dua tenant berbeda dinonaktifkan dengan HTTP 410. Sinkronisasi bundle tenant multi-enterprise juga dinonaktifkan. **Workflow order Buyer/Seller dalam satu enterprise belum diimplementasikan**; jangan mengaktifkan pembayaran atau menganggap UI peran sebagai bukti alur order sudah tersedia.
+
 ### Prinsip keamanan yang perlu dipertahankan
 
 - Jangan memasukkan data klien nyata, kredensial, token, atau secret ke repository, log, screenshot, atau bundle mobile.
