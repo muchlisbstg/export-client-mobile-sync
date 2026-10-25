@@ -394,7 +394,7 @@ export function createSupplyChainService(db) {
     if(siteId) {
       const target=db.prepare("SELECT site_type AS siteType,active FROM supply_sites WHERE tenant_id=? AND id=?").get(tenantId,siteId);
       if(!target || target.active!==1) throw new SupplyChainError(403,"evidence_site_scope_denied");
-      if(input.siteAllowed && !input.siteAllowed(target.siteType)) throw new SupplyChainError(403,"evidence_site_scope_denied");
+      if(input.siteAllowed && !input.siteAllowed(target.siteType,siteId)) throw new SupplyChainError(403,"evidence_site_scope_denied");
     }
     if(input.contentSha256 && !/^[a-f0-9]{64}$/i.test(input.contentSha256)) throw new SupplyChainError(400,"invalid_evidence_hash");
     let parsed;
