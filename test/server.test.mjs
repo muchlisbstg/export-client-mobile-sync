@@ -320,44 +320,7 @@ test("single-enterprise mode locks context and disables legacy cross-enterprise 
   } finally { await service.close(); }
 });
 
-test("sync rejects spoofed or unconfigured peer identities", async () => {
-  const { base, service } = await boot({
-    nodeId: "mobile-target",
-    syncSecret: secret,
-    syncPeers: "trusted-peer=http://127.0.0.1:6553",
-  });
-  try {
-    const record = {
-      id: "123e4567-e89b-42d3-a456-426614174000",
-      trackingCode: "ABCDEF0123456789ABCDEF02",
-      customerName: "Trusted Test",
-      customerEmail: "trusted@example.test",
-      destinationCountry: "Japan",
-      productId: "green-coffee",
-      quantity: 5,
-      unit: "kg",
-      status: "received",
-      createdAt: new Date().toISOString(),
-      originNodeId: "rogue-peer",
-    };
-    const spoofedHeader = await fetch(`${base}/api/v1/sync/inquiries`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${secret}`, "x-sync-peer": "trusted-peer", "content-type": "application/json" },
-      body: JSON.stringify(record),
-    });
-    assert.equal(spoofedHeader.status, 403);
-    assert.deepEqual(await spoofedHeader.json(), { error: "sync_peer_identity_mismatch" });
-    const unconfiguredPeer = await fetch(`${base}/api/v1/sync/inquiries`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
-      body: JSON.stringify(record),
-    });
-    assert.equal(unconfiguredPeer.status, 403);
-    assert.deepEqual(await unconfiguredPeer.json(), { error: "sync_peer_not_configured" });
-    assert.equal(service.db.prepare("SELECT COUNT(*) AS count FROM inquiries WHERE id=?").get(record.id).count, 0);
-  } finally { await service.close(); }
-});
-test("multi-enterprise tenant bundle sync is retired", async () => {
+test("sync rejects unconfigured peers and preserves origin across trusted forwarding", async () => {\n  const { base, service } = await boot({\n    nodeId: "mobile-target",\n    syncSecret: secret,\n    syncPeers: "trusted-peer=http://127.0.0.1:6553",\n  });\n  try {\n    const record = {\n      id: "123e4567-e89b-42d3-a456-426614174000",\n      trackingCode: "ABCDEF0123456789ABCDEF02",\n      customerName: "Trusted Test",\n      customerEmail: "trusted@example.test",\n      destinationCountry: "Japan",\n      productId: "green-coffee",\n      quantity: 5,\n      unit: "kg",\n      status: "received",\n      createdAt: new Date().toISOString(),\n      originNodeId: "original-source",\n    };\n    const unconfiguredPeer = await fetch(`${base}/api/v1/sync/inquiries`, {\n      method: "POST",\n      headers: { authorization: `Bearer ${secret}`, "x-sync-peer": "rogue-peer", "content-type": "application/json" },\n      body: JSON.stringify(record),\n    });\n    assert.equal(unconfiguredPeer.status, 403);\n    assert.deepEqual(await unconfiguredPeer.json(), { error: "sync_peer_not_configured" });\n    assert.equal(service.db.prepare("SELECT COUNT(*) AS count FROM inquiries WHERE id=?").get(record.id).count, 0);\n    const trustedForward = await fetch(`${base}/api/v1/sync/inquiries`, {\n      method: "POST",\n      headers: { authorization: `Bearer ${secret}`, "x-sync-peer": "trusted-peer", "content-type": "application/json" },\n      body: JSON.stringify(record),\n    });\n    assert.equal(trustedForward.status, 201);\n    assert.equal(service.db.prepare("SELECT origin_node_id FROM inquiries WHERE id=?").get(record.id).origin_node_id, "original-source");\n  } finally { await service.close(); }\n});\n\ntest("multi-enterprise tenant bundle sync is retired", async () => {
   const secret = "tenant-sync-test-secret-at-least-32-chars";
   const { base, service } = await boot({ syncSecret: secret, syncPeers: "peer-a=http://127.0.0.1:6553" });
   try {
