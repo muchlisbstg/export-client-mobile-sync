@@ -58,7 +58,7 @@ test("enterprise role provisioning requires active membership and records explic
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse"}),/operator ID are required/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"qc-user"}),/different active enterprise_admin/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"missing-operator"}),/different active enterprise_admin/);
-    db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'");
+    db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'").run();
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/different active enterprise_admin/);
   } finally { db.close(); }
 });
