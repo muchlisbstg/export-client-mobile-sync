@@ -79,7 +79,7 @@ test("enterprise role provisioning requires active membership and records explic
       enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"revoked",revokedBy:"admin-user",
     });
     assert.equal(db.prepare("SELECT status FROM enterprise_role_assignments WHERE enterprise_id='enterprise-1' AND user_id='qc-user' AND role='qc'").get().status,"revoked");
-    const revokedAudit=db.prepare("SELECT action,previous_status,new_status,actor_user_id,reason FROM enterprise_role_audit WHERE user_id='qc-user' AND role='qc' ORDER BY occurred_at DESC LIMIT 1").get();
+    const revokedAudit=db.prepare("SELECT action,previous_status,new_status,actor_user_id,reason FROM enterprise_role_audit WHERE user_id='qc-user' AND role='qc' ORDER BY rowid DESC LIMIT 1").get();
     assert.deepEqual(revokedAudit,{action:"revoked",previous_status:"active",new_status:"revoked",actor_user_id:"admin-user",reason:"access no longer needed"});
   } finally {
     db.close();
