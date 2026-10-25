@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { migrateSupplyChain } from "../server/supply-chain.mjs";
 
 /** Additive, idempotent migration. Legacy inquiry ownership is never guessed. */
 export function migrateTenantIsolation(db) {
@@ -66,7 +67,8 @@ export function migrateTenantIsolation(db) {
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_sync_outbox_queue_seq ON tenant_sync_outbox(queue_seq)");
     }
   })();
-  return { applied: true, legacyRowsRemainUnassigned: true };
+  migrateSupplyChain(db);
+  return { applied: true, legacyRowsRemainUnassigned: true, supplyChain: true };
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
