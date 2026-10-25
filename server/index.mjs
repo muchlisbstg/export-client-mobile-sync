@@ -443,7 +443,6 @@ export function createServer(options = {}) {
     if (!sameSecret(req.get("authorization"), secret)) return res.status(401).json({ error: "unauthorized" });
     const declaredPeerId = req.body && typeof req.body === "object" ? req.body.originNodeId : "";
     const headerPeerId = req.get("x-sync-peer");
-    if (headerPeerId && headerPeerId !== declaredPeerId) return res.status(403).json({ error: "sync_peer_identity_mismatch" });
     const peerNodeId = headerPeerId || declaredPeerId;
     if (peers.length && !peers.some((peer) => peer.nodeId === peerNodeId)) {
       return res.status(403).json({ error: "sync_peer_not_configured" });
