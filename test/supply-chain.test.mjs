@@ -189,7 +189,7 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     assert.deepEqual(sessionBody.roles,["buyer"]);
 
     const buyerStock = await request("token-buyer",`/api/v1/supply/stock?siteId=${encodeURIComponent(site.id)}`);
-    assert.equal(buyerStock.status,200,await buyerStock.clone().text());
+    assert.equal(buyerStock.status,403,await buyerStock.clone().text());
     assert.equal((await request("token-seller",`/api/v1/supply/lots/${lot.lotId}/trace`)).status,200);
     assert.equal((await request("token-supplier",`/api/v1/supply/stock?siteId=${site.id}`)).status,403);
     assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
@@ -279,5 +279,15 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     assert.equal(trace.status,200);
     const traceBody=await trace.json();
     assert.ok(JSON.stringify(traceBody.data).includes("E2E-HANDOVER-1"),"traceability includes the completed handover");
+
+    const forbiddenEvidence=await request("token-buyer","/api/v1/supply/evidence",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({entityType:"lot",entityId:lotId,evidenceType:"photo",storageUri:"https://storage.example.test/evidence/1"}),
+    });
+    assert.equal(forbiddenEvidence.status,403,"buyer must not upload supplier lot evidence");
+
+    dbServer.db.prepare("UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='enterprise-1' AND user_id='user-buyer'").run();
+    assert.equal((await request("token-buyer","/api/v1/enterprise/session")).status,403,"revoked membership must take effect on the next request");
+    dbServer.db.prepare("UPDATE tenant_memberships SET status='active' WHERE tenant_id='enterprise-1' AND user_id='user-buyer'").run();
   } finally { await dbServer.close(); }
 });
