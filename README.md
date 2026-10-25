@@ -187,13 +187,13 @@ Ganti `enterprise-main` dan `<supabase-user-id>` dengan nilai yang benar. Perint
 | `enterprise_admin` | Mengelola lokasi dan operasi yang diizinkan admin |
 | `buyer` | Membaca stok dan traceability sesuai kebijakan |
 | `seller` | Membaca traceability dan mendukung alur pemasokan yang diizinkan |
-| `supplier` | Mendaftarkan lot; tidak mendapat akses daftar stok enterprise |
+| `supplier` | Mendaftarkan lot hanya pada lokasi bertipe `supplier`; tidak mendapat akses daftar stok enterprise atau lokasi gudang internal |
 | `warehouse` | Penerimaan lot, pemrosesan, mutasi dan stok |
 | `qc` | Inspeksi dan pembacaan stok |
 | `logistics` | Mutasi, serah terima, dispatch dan pembacaan operasional |
 | `auditor` | Pembacaan stok/traceability dan pencatatan bukti sesuai izin |
 
-Aplikasi mobile meminta `GET /api/v1/enterprise/session` setelah login dan menampilkan nama enterprise serta daftar peran yang dikembalikan backend. Daftar UI bukan mekanisme otorisasi; setiap endpoint tetap memvalidasi peran di server.
+Aplikasi mobile meminta `GET /api/v1/enterprise/session` setelah login dan menampilkan nama enterprise, daftar peran, serta ringkasan kapabilitas yang dikembalikan/dipetakan dari kebijakan backend. Daftar UI bukan mekanisme otorisasi; setiap endpoint tetap memvalidasi peran di server. Supplier hanya dapat mendaftarkan lot ke lokasi bertipe `supplier`; pencatatan penerimaan di gudang internal dilakukan oleh peran gudang/admin.
 
 Endpoint tulis transaksi komersial lama yang mengharuskan buyer dan seller menjadi dua tenant berbeda dinonaktifkan dengan HTTP 410. Sinkronisasi bundle tenant multi-enterprise juga dinonaktifkan. **Workflow order Buyer/Seller dalam satu enterprise belum diimplementasikan**; jangan mengaktifkan pembayaran atau menganggap UI peran sebagai bukti alur order sudah tersedia.
 
