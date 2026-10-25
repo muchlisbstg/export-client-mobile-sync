@@ -33,7 +33,7 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
   const siteAllowedForRoles = (roles,siteType) => roles.some(role => ({
     enterprise_admin: ["plantation","supplier","packing_house","warehouse","port_terminal","in_transit","buyer"].includes(siteType),
     supplier: ["supplier","plantation"].includes(siteType),
-    warehouse: ["warehouse","packing_house"].includes(siteType),
+    warehouse: ["supplier","warehouse","packing_house","port_terminal"].includes(siteType),
     logistics: ["warehouse","in_transit","port_terminal"].includes(siteType),
     qc: ["supplier","plantation","packing_house","warehouse","port_terminal"].includes(siteType),
     buyer: siteType === "buyer",
