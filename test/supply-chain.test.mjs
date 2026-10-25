@@ -93,10 +93,12 @@ test("packing-house processing creates child lot genealogy atomically", () => {
   try {
     const {lotId}=f.receive({siteId:f.packing.id,quantityMilli:1_000_000});
     f.pass(lotId,f.packing.id);
-    const result=f.service.processLot({tenantId:"tenant-a",siteId:f.packing.id,inputs:[{lotId,quantityMilli:1_000_000,unit:"kg"}],outputs:[{lotCode:"PACKED-001",productId:"coffee-packed",commodityName:"Packed green coffee",quantityMilli:900_000,unit:"kg"}],actorId:"pack-operator",idempotencyKey:"process-1"});
+    const result=f.service.processLot({tenantId:"tenant-a",siteId:f.packing.id,inputs:[{lotId,quantityMilli:1_000_000,unit:"kg"}],outputs:[{lotCode:"PACKED-001",productId:"coffee-packed",commodityName:"Packed green coffee",quantityMilli:900_000,unit:"kg"}],lossQuantityMilli:100_000,lossReason:"sorting_rejects",actorId:"pack-operator",idempotencyKey:"process-1"});
     assert.equal(result.childLots.length,1);
     const trace=f.service.trace({tenantId:"tenant-a",lotId:result.childLots[0].id});
     assert.equal(trace.parents[0].lotId,lotId);
+    assert.equal(f.service.trace({tenantId:"tenant-a",lotId}).losses.length,0);
+    assert.equal(f.service.trace({tenantId:"tenant-a",lotId:lotId}).losses[0].quantityMilli,100_000);
     assert.equal(f.service.stock({tenantId:"tenant-a",siteId:f.packing.id}).find(x=>x.lotId===lotId).quantityMilli,0);
   } finally { f.db.close(); }
 });
