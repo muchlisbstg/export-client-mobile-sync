@@ -207,9 +207,17 @@ export function createSupplyChainService(db) {
       const payload={siteId,lotCode,productId,commodityName,quantityMilli,unit,harvestAt:input.harvestAt??null,originEvidenceRef:input.originEvidenceRef??null};
       const prior=db.prepare("SELECT id,payload_hash AS payloadHash,status,reference_id AS referenceId FROM inventory_movements WHERE tenant_id=? AND idempotency_key=?").get(tenantId,idempotencyKey);
       if (prior) {
-        if(prior.payloadHash!==jsonHash({movementType:"receipt",payload,referenceType:"lot",referenceId:prior.referenceId})) throw new SupplyChainError(409,"idempotency_conflict");
-        const old=db.prepare("SELECT id,lot_code AS lotCode FROM supply_lots WHERE tenant_id=? AND id=?").get(tenantId,prior.referenceId);
-        return {lotId:old?.id,lotCode:old?.lotCode,movementId:prior.id,duplicate:true};
+        const old=db.prepare(`SELECT l.id,l.lot_code AS lotCode,l.product_id AS productId,l.commodity_name AS commodityName,
+          l.origin_site_id AS siteId,l.unit,l.harvest_at AS harvestAt,l.origin_evidence_ref AS originEvidenceRef,
+          e.quantity_milli_delta AS quantityMilli
+          FROM supply_lots l JOIN inventory_entries e ON e.tenant_id=l.tenant_id AND e.lot_id=l.id
+          WHERE l.tenant_id=? AND l.id=? AND e.tenant_id=? AND e.movement_id=? AND e.quantity_milli_delta>0 LIMIT 1`)
+          .get(tenantId,prior.referenceId,tenantId,prior.id);
+        const matches=old && old.siteId===siteId && old.lotCode===lotCode && old.productId===productId &&
+          old.commodityName===commodityName && old.unit===unit && old.harvestAt===(input.harvestAt??null) &&
+          old.originEvidenceRef===(input.originEvidenceRef??null) && old.quantityMilli===quantityMilli;
+        if(!matches) throw new SupplyChainError(409,"idempotency_conflict");
+        return {lotId:old.id,lotCode:old.lotCode,movementId:prior.id,duplicate:true};
       }
       const lotId=id(), time=now();
       db.prepare("INSERT INTO supply_lots(id,tenant_id,lot_code,product_id,commodity_name,origin_site_id,current_status,unit,harvest_at,received_at,origin_evidence_ref,created_by,created_at) VALUES(?,?,?,?,?,?,'quarantined',?,?,?,?,?,?)")
