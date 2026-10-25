@@ -13,9 +13,14 @@ export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy
   if (!enterprise || enterprise.status !== "active") throw new Error("enterprise is missing or inactive");
   const membership = db.prepare("SELECT status FROM tenant_memberships WHERE tenant_id=? AND user_id=?").get(enterpriseId,userId);
   if (!membership || membership.status !== "active") throw new Error("user must have an active membership in the configured enterprise");
-  const operatorMembership = db.prepare("SELECT status FROM tenant_memberships WHERE tenant_id=? AND user_id=?").get(enterpriseId,grantedBy);
-  const operatorRole = db.prepare("SELECT status FROM enterprise_role_assignments WHERE enterprise_id=? AND user_id=? AND role='enterprise_admin'").get(enterpriseId,grantedBy);
-  if (grantedBy === userId || operatorMembership?.status !== "active" || operatorRole?.status !== "active") {
+  const authorizedOperator = db.prepare(`SELECT 1 AS authorized
+    FROM tenant_memberships AS membership
+    JOIN enterprise_role_assignments AS assignment
+      ON assignment.enterprise_id=membership.tenant_id AND assignment.user_id=membership.user_id
+    WHERE membership.tenant_id=? AND membership.user_id=?
+      AND membership.status='active' AND assignment.role='enterprise_admin' AND assignment.status='active'`)
+    .get(enterpriseId,grantedBy);
+  if (grantedBy === userId || !authorizedOperator) {
     throw new Error("role assignment requires a different active enterprise_admin operator");
   }
   const transaction = db.transaction(() => {
