@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { migrateTenantIsolation } from "../scripts/migrate-tenant-isolation.mjs";
+import { assignEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
 
 function legacyDb() {
   const db = new Database(":memory:");
@@ -36,6 +37,22 @@ test("migration is idempotent and creates tenant model tables", () => {
     for (const table of ["tenants","tenant_memberships","enterprise_role_assignments","commercial_transactions","tenant_sync_outbox"]) {
       assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
     }
+  } finally { db.close(); }
+});
+
+test("enterprise role provisioning requires active membership and records explicit least-privilege roles", () => {
+  const db = legacyDb();
+  try {
+    migrateTenantIsolation(db);
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("enterprise-1","seller","Enterprise One",now);
+    db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,status,created_at) VALUES(?,?,?,'active',?)").run("enterprise-1","qc-user","seller_member",now);
+    assert.deepEqual(assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"qc"}),{
+      enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"active",
+    });
+    assert.equal(db.prepare("SELECT granted_by FROM enterprise_role_assignments WHERE user_id='qc-user' AND role='qc'").get().granted_by,"operator-cli");
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"missing-user",role:"warehouse"}),/active membership/);
+    assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"root"}),/unsupported enterprise role/);
   } finally { db.close(); }
 });
 
