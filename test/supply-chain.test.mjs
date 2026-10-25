@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { migrateSupplyChainDatabase } from "../scripts/migrate-supply-chain.mjs";
 import { createSupplyChainService, SupplyChainError } from "../server/supply-chain.mjs";
+import { createServer } from "../server/index.mjs";
 
 function fixture() {
   const db = new Database(":memory:");
@@ -122,4 +123,33 @@ test("cross-tenant lot and site access are denied", () => {
     assert.throws(()=>f.service.stock({tenantId:"tenant-b",siteId:f.plantation.id}),e=>e instanceof SupplyChainError&&e.status===404&&e.code==="site_not_found");
     assert.throws(()=>f.service.moveStock({tenantId:"tenant-b",lotId,fromSiteId:f.other.id,toSiteId:f.other.id,quantityMilli:1,unit:"kg",actorId:"user-b",idempotencyKey:"x"}),e=>e instanceof SupplyChainError&&e.status===400);
   } finally { f.db.close(); }
+});
+
+test("HTTP supply-chain routes require verified identity and active tenant membership", async () => {
+  const dbServer=createServer({
+    host:"127.0.0.1",port:0,supabaseUrl:"https://auth.example.test",supabaseAnonKey:"test-anon",
+    authFetcher:async (_url,init)=>{
+      const token=init.headers.Authorization.replace(/^Bearer /,"");
+      const ids={"token-a":"user-a","token-b":"user-b"};
+      return ids[token]?new Response(JSON.stringify({id:ids[token]}),{status:200}):new Response("{}",{status:401});
+    },
+  });
+  let base;
+  try {
+    const started=await dbServer.start(); base=`http://127.0.0.1:${started.port}`;
+    migrateSupplyChainDatabase(dbServer.db);
+    dbServer.db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("tenant-a","seller","Seller A",new Date().toISOString());
+    dbServer.db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("tenant-b","seller","Seller B",new Date().toISOString());
+    dbServer.db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES(?,?,?,?)").run("tenant-a","user-a","seller_admin",new Date().toISOString());
+    dbServer.db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES(?,?,?,?)").run("tenant-b","user-b","seller_admin",new Date().toISOString());
+    const service=createSupplyChainService(dbServer.db);
+    const site=service.createSite({tenantId:"tenant-a",siteCode:"A-SITE",name:"Tenant A Site",siteType:"plantation",actorId:"user-a"});
+    const lot=service.receiveLot({tenantId:"tenant-a",siteId:site.id,lotCode:"A-LOT",productId:"coffee",commodityName:"Coffee",quantityMilli:1000,unit:"kg",actorId:"user-a",idempotencyKey:"a-receipt"});
+    const unauth=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`,{headers:{"x-active-tenant-id":"tenant-a"}});
+    assert.equal(unauth.status,401);
+    const cross=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`,{headers:{Authorization:"Bearer token-b","x-active-tenant-id":"tenant-b"}});
+    assert.equal(cross.status,404);
+    const allowed=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`,{headers:{Authorization:"Bearer token-a","x-active-tenant-id":"tenant-a"}});
+    assert.equal(allowed.status,200);
+  } finally { await dbServer.close(); }
 });
