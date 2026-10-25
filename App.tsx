@@ -360,14 +360,14 @@ export default function App() {
         </View>
 
         <View style={[styles.card, { padding: 14, marginTop: 10 }]}>
-          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login admin" : "Login enterprise"}</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login enterprise" : "Login enterprise"}</Text></Pressable>
           {showAuthPanel && <>
             {authAccessToken ? <View style={{ marginTop: 10, padding: 12, backgroundColor: "#edf2e8", borderRadius: 8 }}>
               <Text accessibilityRole="text" style={{ color: colors.green, fontWeight: "800" }}>{authEnterpriseName || "Enterprise"}</Text>
               <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>Satu enterprise · sesi: {authRole}</Text>
               <Text style={{ color: colors.ink, fontSize: 11, fontWeight: "700", marginTop: 8 }}>Peran yang diberikan server</Text>
               {authEnterpriseRoles.length ? authEnterpriseRoles.map((role) => <Text key={role} style={{ color: colors.green, fontSize: 11, marginTop: 4 }}>• {({ enterprise_admin: "Enterprise Admin", buyer: "Buyer / Procurement", seller: "Seller internal", supplier: "Supplier eksternal", warehouse: "Gudang / Warehouse", qc: "Quality Control (QC)", logistics: "Logistik", auditor: "Auditor / Management" } as Record<string, string>)[role] ?? role}</Text>) : <Text style={{ color: colors.danger, fontSize: 11, marginTop: 4 }}>Tidak ada peran aktif. Hubungi administrator enterprise.</Text>}
-              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 8 }}>Menu mengikuti peran; API tetap memvalidasi izin di backend.</Text>
+              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 8 }}>Peran di atas berasal dari server; API tetap memvalidasi izin untuk setiap tindakan.</Text>
             </View> : null}
             <Field label="Email" value={authEmail} onChangeText={setAuthEmail} placeholder="email@perusahaan.com" keyboardType="email-address" autoCapitalize="none" />
             <Field label="Password" value={authPassword} onChangeText={setAuthPassword} placeholder="Password" autoCapitalize="none" />
