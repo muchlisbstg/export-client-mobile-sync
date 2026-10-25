@@ -293,5 +293,14 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     assert.ok(auditCount>0,"mutating supply-chain requests must be audited");
     assert.ok(dbServer.db.prepare("SELECT 1 FROM supply_audit_events WHERE tenant_id='enterprise-1' AND outcome='denied'").get(),"denied evidence/site access must be recorded");
     assert.throws(()=>dbServer.db.prepare("DELETE FROM supply_audit_events WHERE tenant_id='enterprise-1'").run(),/supply_audit_events_are_append_only/);
+
+    dbServer.db.exec("DROP TABLE supply_audit_events");
+    const auditUnavailable=await request("token-admin","/api/v1/supply/sites",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({siteCode:"AUDIT-FAIL-ROLLBACK",name:"Must Not Persist",siteType:"warehouse"}),
+    });
+    assert.equal(auditUnavailable.status,503,"mutations must fail closed when audit storage is unavailable");
+    assert.equal(dbServer.db.prepare("SELECT COUNT(*) AS count FROM supply_sites WHERE tenant_id='enterprise-1' AND site_code='AUDIT-FAIL-ROLLBACK'").get().count,0,
+      "site creation must roll back when its audit event cannot be persisted");
   } finally { await dbServer.close(); }
 });
