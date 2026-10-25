@@ -62,7 +62,8 @@ test("enterprise role provisioning requires active membership and records explic
     assert.equal(db.prepare("SELECT granted_by FROM enterprise_role_assignments WHERE user_id='qc-user' AND role='qc'").get().granted_by,"admin-user");
     const roleAudit = db.prepare("SELECT action,previous_status,new_status,actor_user_id FROM enterprise_role_audit WHERE enterprise_id='enterprise-1' AND user_id='qc-user' AND role='qc'").get();
     assert.deepEqual(roleAudit,{action:"granted",previous_status:null,new_status:"active",actor_user_id:"admin-user"});
-    assert.throws(() => db.prepare("UPDATE enterprise_role_audit SET actor_user_id='tampered' WHERE user_id='qc-user'").run(), /no such table|constraint/i);
+    assert.throws(() => db.prepare("UPDATE enterprise_role_audit SET actor_user_id='tampered' WHERE user_id='qc-user'").run(), /enterprise_role_audit_is_append_only/);
+    assert.throws(() => db.prepare("DELETE FROM enterprise_role_audit WHERE user_id='qc-user'").run(), /enterprise_role_audit_is_append_only/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"missing-user",role:"warehouse",grantedBy:"admin-user"}),/active membership/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"root",grantedBy:"admin-user"}),/unsupported enterprise role/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse"}),/operator ID are required/);
