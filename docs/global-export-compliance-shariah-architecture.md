@@ -174,3 +174,7 @@ Before production use, demonstrate with automated tests and reviewed evidence:
 - Test evidence, CI run references, risk acceptance records, and signed go-live checklist.
 
 **Non-goal:** this repository and README do not themselves provide legal advice, customs brokerage, regulatory filing, a fatwa, or certification. Exact obligations must be verified for the specific commodity, parties, route, transaction date, and jurisdiction by qualified professionals and authoritative sources.
+
+## Related requirements: payments and samples
+
+Payment method selection, documentary collections, documentary credits, bank guarantees/standby instruments, escrow/provider use, Islamic trade finance, sample/prototype shipments, customs values, refunds, and payment reconciliation are specified in [Export Payment, Samples & Commercial Terms](export-payment-samples-shariah.md). Treat that document as a linked design backlog. Payment-provider, bank, legal, customs, and Syariah approval remain separate required gates before any production integration.
