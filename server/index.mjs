@@ -379,14 +379,14 @@ export function createServer(options = {}) {
   // Multi-enterprise tenant bundle replication is retired in the single-enterprise model.
   app.post("/api/v1/sync/tenants", (_req,res) => res.status(410).json({error:"multi_enterprise_sync_retired"}));
 
-  app.get("/api/v1/transactions", auth.authenticate, requireActiveTenant, (_req, res) => {
+  app.get("/api/v1/transactions", auth.authenticate, requireActiveTenant, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), (_req, res) => {
     const tenant = res.locals.activeTenant;
     const rows = db.prepare(`SELECT id, buyer_tenant_id AS buyerTenantId, seller_tenant_id AS sellerTenantId, inquiry_id AS inquiryId, status, created_at AS createdAt
       FROM commercial_transactions WHERE buyer_tenant_id=? OR seller_tenant_id=? ORDER BY created_at DESC LIMIT 100`).all(tenant.id, tenant.id);
     res.setHeader("Cache-Control", "no-store");
     return res.json({ data: rows });
   });
-  app.get("/api/v1/transactions/:id", auth.authenticate, requireActiveTenant, (req, res) => {
+  app.get("/api/v1/transactions/:id", auth.authenticate, requireActiveTenant, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), (req, res) => {
     const tenant = res.locals.activeTenant;
     const row = db.prepare(`SELECT id, buyer_tenant_id AS buyerTenantId, seller_tenant_id AS sellerTenantId, inquiry_id AS inquiryId, status, created_at AS createdAt
       FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)`).get(req.params.id, tenant.id, tenant.id);
