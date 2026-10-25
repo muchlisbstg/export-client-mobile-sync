@@ -97,29 +97,49 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
 
 
   app.post("/api/v1/supply/sites/:siteId/assignments", ...secured, requireEnterpriseRole("enterprise_admin"), (req,res) => {
-    const siteId=String(req.params.siteId??"").trim();
-    const userId=String(req.body?.userId??"").trim();
-    if (!userId) return res.status(400).json({error:"user_id_required"});
-    const target=db.prepare("SELECT id FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
-    if (!target) return res.status(404).json({error:"site_not_found"});
-    const now=new Date().toISOString();
-    db.prepare(`INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at)
-      VALUES(?,?,?,'active',?,?,?)
-      ON CONFLICT(tenant_id,user_id,site_id) DO UPDATE SET status='active',granted_by=excluded.granted_by,updated_at=excluded.updated_at`)
-      .run(tenant(res),userId,siteId,actor(res),now,now);
-    const recorded=audit(req,res,{action:"site_assignment_grant",outcome:"success",entityType:"site",entityId:siteId,details:{userId}});
-    if (!recorded) return res.status(503).json({error:"audit_unavailable"});
-    return res.status(201).json({data:{tenantId:tenant(res),userId,siteId,status:"active"}});
+    try {
+      const data=db.transaction(() => {
+        const siteId=String(req.params.siteId??"").trim();
+        const userId=String(req.body?.userId??"").trim();
+        if (!userId) throw new SupplyChainError(400,"user_id_required");
+        const target=db.prepare("SELECT id FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
+        if (!target) throw new SupplyChainError(404,"site_not_found");
+        const now=new Date().toISOString();
+        db.prepare(`INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at)
+          VALUES(?,?,?,'active',?,?,?)
+          ON CONFLICT(tenant_id,user_id,site_id) DO UPDATE SET status='active',granted_by=excluded.granted_by,updated_at=excluded.updated_at`)
+          .run(tenant(res),userId,siteId,actor(res),now,now);
+        if (!audit(req,res,{action:"site_assignment_grant",outcome:"success",entityType:"site",entityId:siteId,details:{userId}})) {
+          const error=new Error("audit_write_failed"); error.code="AUDIT_WRITE_FAILED"; throw error;
+        }
+        return {tenantId:tenant(res),userId,siteId,status:"active"};
+      })();
+      return res.status(201).json({data});
+    } catch(error) {
+      if(error?.code==="AUDIT_WRITE_FAILED") return res.status(503).json({error:"audit_unavailable"});
+      if(error instanceof SupplyChainError) return res.status(error.status).json({error:error.code});
+      return res.status(500).json({error:"site_assignment_failed"});
+    }
   });
   app.delete("/api/v1/supply/sites/:siteId/assignments/:userId", ...secured, requireEnterpriseRole("enterprise_admin"), (req,res) => {
-    const siteId=String(req.params.siteId??"").trim();
-    const userId=String(req.params.userId??"").trim();
-    const result=db.prepare("UPDATE supply_site_assignments SET status='revoked',updated_at=? WHERE tenant_id=? AND user_id=? AND site_id=? AND status='active'")
-      .run(new Date().toISOString(),tenant(res),userId,siteId);
-    if (!result.changes) return res.status(404).json({error:"active_assignment_not_found"});
-    const recorded=audit(req,res,{action:"site_assignment_revoke",outcome:"success",entityType:"site",entityId:siteId,details:{userId}});
-    if (!recorded) return res.status(503).json({error:"audit_unavailable"});
-    return res.status(200).json({data:{tenantId:tenant(res),userId,siteId,status:"revoked"}});
+    try {
+      const data=db.transaction(() => {
+        const siteId=String(req.params.siteId??"").trim();
+        const userId=String(req.params.userId??"").trim();
+        const result=db.prepare("UPDATE supply_site_assignments SET status='revoked',updated_at=? WHERE tenant_id=? AND user_id=? AND site_id=? AND status='active'")
+          .run(new Date().toISOString(),tenant(res),userId,siteId);
+        if (!result.changes) throw new SupplyChainError(404,"active_assignment_not_found");
+        if (!audit(req,res,{action:"site_assignment_revoke",outcome:"success",entityType:"site",entityId:siteId,details:{userId}})) {
+          const error=new Error("audit_write_failed"); error.code="AUDIT_WRITE_FAILED"; throw error;
+        }
+        return {tenantId:tenant(res),userId,siteId,status:"revoked"};
+      })();
+      return res.status(200).json({data});
+    } catch(error) {
+      if(error?.code==="AUDIT_WRITE_FAILED") return res.status(503).json({error:"audit_unavailable"});
+      if(error instanceof SupplyChainError) return res.status(error.status).json({error:error.code});
+      return res.status(500).json({error:"site_assignment_failed"});
+    }
   });
 
   app.post("/api/v1/supply/sites", ...secured, requireEnterpriseRole("enterprise_admin"), handle((req,res) => service().createSite({
