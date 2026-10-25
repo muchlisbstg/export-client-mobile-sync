@@ -170,6 +170,7 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
 
     const service=createSupplyChainService(dbServer.db);
     const site=service.createSite({tenantId:"enterprise-1",siteCode:"WH-1",name:"Main Warehouse",siteType:"warehouse",actorId:"user-admin"});
+    const supplierSite=service.createSite({tenantId:"enterprise-1",siteCode:"SUP-1",name:"Supplier Intake",siteType:"supplier",actorId:"user-admin"});
     const lot=service.receiveLot({tenantId:"enterprise-1",siteId:site.id,lotCode:"LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:1000,unit:"kg",actorId:"user-admin",idempotencyKey:"seed-lot"});
     const headers=(token)=>({Authorization:`Bearer ${token}`});
     const request=(token,path,init={})=>fetch(`${base}${path}`,{...init,headers:{...headers(token),...(init.headers??{})}});
@@ -199,9 +200,14 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     });
     assert.equal(qcInspection.status,201);
 
+    const supplierWarehouseWrite=await request("token-supplier","/api/v1/supply/lots",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"supplier-lot-warehouse-denied"},
+      body:JSON.stringify({siteId:site.id,lotCode:"SUPPLIER-LOT-DENIED",productId:"coffee",commodityName:"Coffee",quantityMilli:500,unit:"kg"}),
+    });
+    assert.equal(supplierWarehouseWrite.status,403);
     const supplierLot=await request("token-supplier","/api/v1/supply/lots",{
       method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"supplier-lot-1"},
-      body:JSON.stringify({siteId:site.id,lotCode:"SUPPLIER-LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:500,unit:"kg"}),
+      body:JSON.stringify({siteId:supplierSite.id,lotCode:"SUPPLIER-LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:500,unit:"kg"}),
     });
     assert.equal(supplierLot.status,201);
 
