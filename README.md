@@ -20,6 +20,7 @@ Aplikasi klien mobile untuk katalog produk dan pengiriman **inquiry** kepada bac
 - [Audit kekurangan README](#audit-kekurangan-readme)
 - [Batasan MVP dan langkah lanjutan](#batasan-mvp-dan-langkah-lanjutan)
 - [Kebutuhan Pengguna Aplikasi Mobile Supply Chain](#kebutuhan-pengguna-aplikasi-mobile-supply-chain)
+- [Model Single-Enterprise](#model-single-enterprise)
 - [Fitur Buyer dan Seller](#fitur-buyer-dan-seller)
 
 ## Ringkasan
@@ -340,7 +341,7 @@ Peran di atas adalah model kebutuhan bisnis. Implementasi role yang lebih rinci 
 | Laporan | Rekap stok, penerimaan, pemrosesan dan susut, hasil QC, mutasi, selisih, dan pengiriman. |
 | Audit log | Merekam siapa melakukan tindakan apa, kapan, pada tenant dan objek mana, serta referensi transaksi dan bukti yang terkait. |
 | Bukti transaksi | Menautkan foto/dokumen, metadata, referensi penyimpanan, dan hak akses dengan transaksi terkait. Penyimpanan referensi saja tidak berarti upload, scanning malware, atau signed URL telah tersedia. |
-| Tenant aktif | Menampilkan konteks perusahaan aktif dengan jelas; setiap permintaan API tetap harus memverifikasi membership dan tenant scope di server. |
+| Konteks enterprise | Menampilkan enterprise pemilik sistem dan peran aktif; enterprise ditetapkan server-side dan tidak dapat diganti bebas oleh pengguna. |
 
 ### 3. Halaman utama yang disarankan
 
@@ -363,7 +364,7 @@ Navigasi akhir perlu disesuaikan dengan hasil riset pengguna dan hak akses tiap 
 - **Lot ditahan:** lot berstatus hold/rejected tidak boleh dipakai untuk pemrosesan, dialokasikan, atau dikirim melalui jalur normal sampai dilepas oleh pihak berwenang dengan alasan dan rekaman audit.
 - **Selisih penerimaan:** kuantitas yang dikirim dan diterima dicatat terpisah. Selisih memerlukan alasan, bukti, status tindak lanjut, dan jejak siapa yang memutuskan; sistem tidak boleh diam-diam menyesuaikan kuantitas asal.
 - **Kuantitas dan susut:** gunakan satuan yang eksplisit dan konversi yang tervalidasi. Untuk proses yang mengharuskan rekonsiliasi, input harus sama dengan output ditambah susut/kehilangan yang dinyatakan dan dicatat.
-- **Isolasi tenant:** identitas tenant dan membership aktif harus diverifikasi di sisi server. Penggantian ID lot, lokasi, inspeksi, atau handover dalam request tidak boleh memberi akses lintas-tenant; data yang tidak berhak diakses harus ditolak tanpa membocorkan keberadaannya.
+- **Batas enterprise dan otorisasi objek:** enterprise ditetapkan server-side; penggantian ID lot, lokasi, inspeksi, handover, RFQ, order, atau dokumen dalam request tidak boleh melewati pemeriksaan peran, lokasi, dan hubungan transaksi. Jika kode masih menggunakan tenant scope internal, pengujian isolasi tersebut tetap wajib.
 - **Bukti dan audit:** metadata bukti harus terkait ke tenant dan transaksi; akses, perubahan status, koreksi, dan pelepasan hold harus tercatat. Jangan menyimpan secret di bundle mobile atau log.
 - **Aksesibilitas operasional:** form perlu validasi yang jelas, satuan yang terlihat, konfirmasi sebelum tindakan berdampak besar, pesan error yang dapat ditindaklanjuti, serta dukungan penggunaan di layar kecil dan kondisi jaringan lapangan.
 - **Keamanan data:** gunakan data sintetis selama pengembangan; terapkan minimisasi data, retensi, backup/restore, dan pembatasan akses sebelum data bisnis nyata digunakan.
@@ -387,7 +388,7 @@ Navigasi akhir perlu disesuaikan dengan hasil riset pengguna dan hak akses tiap 
 - [ ] Kuantitas input direkonsiliasi dengan output ditambah susut yang dicatat.
 - [ ] Lot yang ditahan/ditolak tidak dapat digunakan atau dikirim melalui jalur normal sebelum dilepas secara sah.
 - [ ] Selisih penerimaan/serah terima tercatat dengan alasan, bukti, dan tindak lanjut.
-- [ ] Pengguna tenant lain, pengguna tanpa autentikasi, dan pengguna tanpa hak peran ditolak.
+- [ ] Pengguna tanpa autentikasi, pengguna tanpa hak peran, dan supplier yang mencoba mengakses objek/transaksi pihak lain ditolak.
 - [ ] Pengubahan ID objek di request tidak dapat melewati pemeriksaan tenant/otorisasi.
 - [ ] Jika offline mode diaktifkan, retry dan sinkronisasi ulang tidak menggandakan transaksi; konflik terlihat oleh pengguna.
 - [ ] Bukti hanya dapat diakses pihak yang berwenang dan metadata audit tersimpan.
@@ -406,18 +407,33 @@ Navigasi akhir perlu disesuaikan dengan hasil riset pengguna dan hak akses tiap 
 - README ini adalah spesifikasi kebutuhan produk dan checklist pengujian. Status implementasi harus dinilai dari kode, hasil test, workflow CI terbaru, dan bukti pada commit yang sama; belum berarti aplikasi siap produksi.
 
 
+## Model Single-Enterprise
+
+Aplikasi ini diperuntukkan bagi **satu enterprise pemilik sistem**. Produk bukan marketplace multi-enterprise dan tidak menyediakan pendaftaran, pembuatan, atau perpindahan bebas antar-enterprise. Satu enterprise dapat memiliki banyak pengguna, departemen, gudang, lokasi operasional, serta mitra pemasok/pembeli eksternal yang diberi akses terbatas bila diperlukan.
+
+Prinsip implementasi:
+
+- Enterprise ditetapkan melalui konfigurasi dan identitas yang dikelola server; aplikasi klien tidak boleh memilih atau menetapkan enterprise otoritatif melalui request.
+- Pengguna internal memperoleh satu atau beberapa peran sesuai tugas, misalnya Enterprise Admin, Procurement/Buyer, Warehouse, QC, Logistics, Management/Auditor.
+- **Buyer** dan **Seller** adalah fungsi/peran transaksi di dalam operasi enterprise, bukan dua enterprise pemilik yang terpisah. Supplier eksternal dapat diberi akses terbatas pada RFQ, quotation, order, pengiriman, dan dokumen yang secara eksplisit terkait dengannya.
+- Akses data dibatasi menurut peran, lokasi, objek, dan hubungan transaksi. Pihak eksternal tidak boleh melihat transaksi atau dokumen milik pihak lain.
+- Jika implementasi saat ini masih memakai `tenant_id` atau membership tenant untuk isolasi data, jangan menghapusnya secara massal. Pertahankan pemeriksaan server-side dan lakukan penyederhanaan skema hanya melalui migrasi terencana yang diuji pada salinan database.
+- Tidak ada pergantian enterprise aktif di UI untuk pengguna biasa. Konteks enterprise bersifat tetap; UI boleh menunjukkan nama enterprise dan peran aktif.
+
+Model ini menyederhanakan ruang lingkup produk, tetapi tidak mengurangi kebutuhan autentikasi, otorisasi backend, audit log, perlindungan dokumen, atau pengujian akses.
+
 ## Fitur Buyer dan Seller
 
-Fitur buyer/seller adalah kebutuhan produk yang direncanakan untuk memperluas aplikasi dari pencatatan operasional supply chain menjadi platform transaksi bisnis B2B. Bagian ini mendefinisikan pengalaman dan kontrol yang dibutuhkan; pencantuman di README **tidak berarti fitur marketplace, quotation, order, pembayaran, atau chat sudah diimplementasikan**.
+Fitur Buyer/Seller adalah alur pengadaan dan pemasokan dalam **satu enterprise**. Buyer umumnya mewakili tim pembelian enterprise; Seller dapat berupa tim penjualan internal atau supplier eksternal yang diberi akses terbatas. Bagian ini mendefinisikan target produk; pencantuman di README **tidak berarti fitur marketplace, quotation, order, pembayaran, atau chat sudah diimplementasikan**.
 
-### 1. Model peran yang fleksibel
+### 1. Model peran dan akses
 
-- Satu akun pengguna dapat memiliki keanggotaan pada satu atau beberapa organisasi/tenant, sesuai undangan dan otorisasi yang sah.
-- Organisasi dapat bertindak sebagai **Buyer**, **Seller**, atau keduanya, bergantung pada transaksi dan kewenangan yang diberikan.
-- Peran Buyer/Seller ditetapkan dan diperiksa pada konteks organisasi dan transaksi di server; tidak boleh dipercaya hanya karena dikirim dari aplikasi.
-- Pengguna hanya boleh melihat penawaran, pesanan, dokumen, harga privat, pesan, dan bukti yang memang dapat diakses oleh organisasinya.
-- Data buyer dan seller harus terisolasi antartenant; hubungan antarpihak dibatasi pada transaksi yang sah.
-- Perubahan peran, pergantian organisasi aktif, dan pemberian akses harus diaudit. UI harus menampilkan organisasi dan peran aktif secara jelas agar pengguna tidak salah bertindak.
+- Enterprise memiliki satu konteks organisasi pemilik sistem.
+- Pengguna internal dapat memperoleh beberapa peran sesuai tugas; peran Buyer dan Seller tidak membuat enterprise baru.
+- Supplier eksternal hanya dapat masuk melalui mekanisme undangan/onboarding yang disetujui dan hanya melihat data RFQ, quotation, order, shipment, dan dokumen yang terkait dengannya.
+- Peran dan akses selalu ditetapkan serta diverifikasi di server; jangan percaya role atau enterprise ID hanya karena dikirim aplikasi.
+- Pengguna hanya boleh melihat penawaran, pesanan, dokumen, harga privat, pesan, dan bukti yang memang diizinkan untuk peran dan transaksi tersebut.
+- Perubahan peran dan pemberian akses harus diaudit. UI menampilkan enterprise dan peran aktif secara jelas agar pengguna tidak salah bertindak.
 
 ### 2. Fitur Buyer — Pembeli
 
@@ -491,10 +507,10 @@ Status order yang disarankan: `draft`, `rfq_submitted`, `quoted`, `negotiation`,
 
 ### 7. Acceptance tests Buyer/Seller sebelum rilis
 
-- [ ] Buyer hanya dapat melihat katalog publik/penawaran yang memang ditujukan atau dibagikan kepadanya.
-- [ ] Seller hanya dapat mengelola katalog, RFQ, quotation, dan order milik tenant yang diotorisasi.
-- [ ] Akun dengan dua peran dapat berpindah konteks hanya jika membership untuk konteks tersebut sah.
-- [ ] Manipulasi ID RFQ, quotation, order, dokumen, invoice, atau shipment tidak memberi akses lintas-tenant.
+- [ ] Buyer internal hanya dapat melihat katalog dan penawaran sesuai kewenangannya.
+- [ ] Seller internal atau supplier eksternal hanya dapat mengelola RFQ, quotation, dan order yang diotorisasi untuknya.
+- [ ] Akun dengan beberapa peran dapat berpindah mode Buyer/Seller hanya sesuai role assignment yang sah; konteks enterprise tetap satu.
+- [ ] Manipulasi ID RFQ, quotation, order, dokumen, invoice, atau shipment tidak memberi akses ke objek pihak lain.
 - [ ] Buyer tidak dapat mengubah quotation atau status pemenuhan Seller; Seller tidak dapat memalsukan penerimaan Buyer.
 - [ ] Perubahan quotation/order menghasilkan versi dan audit trail; persetujuan terikat ke versi yang benar.
 - [ ] Dua permintaan order bersamaan tidak dapat mengalokasikan stok melebihi jumlah yang tersedia.
