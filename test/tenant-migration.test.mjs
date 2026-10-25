@@ -35,6 +35,8 @@ test("migration is idempotent and creates tenant model tables", () => {
   try {
     assert.doesNotThrow(() => migrateTenantIsolation(db));
     assert.doesNotThrow(() => migrateTenantIsolation(db));
+    assert.deepEqual(db.prepare("PRAGMA integrity_check").all(), [{ integrity_check: "ok" }]);
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     for (const table of ["tenants","tenant_memberships","enterprise_role_assignments","commercial_transactions","tenant_sync_outbox"]) {
       assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
     }

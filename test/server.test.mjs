@@ -109,6 +109,11 @@ test("sync is off by default and rejects unauthenticated or malformed peer recor
   const enabled = await boot({ nodeId: "mobile-auth", syncSecret: secret });
   const unauthorized = await fetch(`${enabled.base}/api/v1/sync/inquiries`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   assert.equal(unauthorized.status, 401);
+  const invalidCredential = await fetch(`${enabled.base}/api/v1/sync/inquiries`, {
+    method: "POST", headers: { authorization: "Bearer definitely-not-the-sync-secret", "content-type": "application/json" }, body: "{}",
+  });
+  assert.equal(invalidCredential.status, 401);
+  assert.deepEqual(await invalidCredential.json(), { error: "unauthorized" });
   const malformed = await fetch(`${enabled.base}/api/v1/sync/inquiries`, {
     method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" }, body: "{}",
   });
