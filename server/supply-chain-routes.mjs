@@ -43,6 +43,11 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     tenantId:tenant(res),actorId:actor(res),lotId:req.body?.lotId,fromSiteId:req.body?.fromSiteId,
     toSiteId:req.body?.toSiteId,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,idempotencyKey:req.get("idempotency-key"),
   })));
+  app.post("/api/v1/supply/evidence", ...secured, handle((req,res) => service.addEvidence({
+    tenantId:tenant(res),actorId:actor(res),entityType:req.body?.entityType,entityId:req.body?.entityId,
+    evidenceType:req.body?.evidenceType,storageUri:req.body?.storageUri,contentSha256:req.body?.contentSha256,
+    capturedAt:req.body?.capturedAt,metadata:req.body?.metadata,retentionUntil:req.body?.retentionUntil,
+  })));
   app.get("/api/v1/supply/stock", ...secured, (req,res) => {
     try {
       const data=service.stock({tenantId:tenant(res),siteId:String(req.query.siteId??"")});
