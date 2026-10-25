@@ -183,11 +183,11 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     assert.equal(sessionBody.enterprise.id,"enterprise-1");
     assert.deepEqual(sessionBody.roles,["buyer"]);
 
-    assert.equal((await request("token-buyer","/api/v1/supply/stock")).status,200);
+    assert.equal((await request("token-buyer",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
     assert.equal((await request("token-seller",`/api/v1/supply/lots/${lot.lotId}/trace`)).status,200);
-    assert.equal((await request("token-supplier","/api/v1/supply/stock")).status,403);
-    assert.equal((await request("token-warehouse","/api/v1/supply/stock")).status,200);
-    assert.equal((await request("token-qc","/api/v1/supply/stock")).status,200);
+    assert.equal((await request("token-supplier",`/api/v1/supply/stock?siteId=${site.id}`)).status,403);
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
+    assert.equal((await request("token-qc",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
 
     const deniedInspection=await request("token-buyer",`/api/v1/supply/lots/${lot.lotId}/inspections`,{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:site.id,inspectionType:"receiving",result:"pass"}),
@@ -215,7 +215,7 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     });
     assert.equal(adminSiteCreation.status,201);
 
-    const switchedEnterprise=await request("token-buyer","/api/v1/supply/stock",{
+    const switchedEnterprise=await request("token-buyer",`/api/v1/supply/stock?siteId=${site.id}`,{
       headers:{"x-active-tenant-id":"other-enterprise"},
     });
     assert.equal(switchedEnterprise.status,403);
