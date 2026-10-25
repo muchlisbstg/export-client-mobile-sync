@@ -55,6 +55,24 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     return requireSiteScope(req,res,next,String(req.body?.siteId??"").trim());
   };
   const requireStockSiteScope = (req,res,next) => requireSiteScope(req,res,next,String(req.query.siteId??"").trim());
+  const requireBodySiteScope = (field) => (req,res,next) => requireSiteScope(req,res,next,String(req.body?.[field]??"").trim());
+  const requireTransferSiteScope = (req,res,next) => {
+    const roles=res.locals.activeTenant?.roles??[];
+    for (const siteId of [String(req.body?.fromSiteId??"").trim(),String(req.body?.toSiteId??"").trim()]) {
+      const target=db.prepare("SELECT site_type AS siteType,active FROM supply_sites WHERE tenant_id=? AND id=?").get(tenant(res),siteId);
+      if (!target || target.active!==1 || !siteAllowedForRoles(roles,target.siteType)) {
+        audit(req,res,{action:"site_scope_check",outcome:"denied",entityType:"site",entityId:siteId,details:{roles}});
+        return res.status(403).json({error:"site_scope_denied"});
+      }
+    }
+    return next();
+  };
+  const requireHandoverSiteScope = (siteField) => (req,res,next) => {
+    const column=siteField==="from"?"from_site_id":"to_site_id";
+    const row=db.prepare("SELECT "+column+" AS siteId FROM handovers WHERE tenant_id=? AND id=?").get(tenant(res),String(req.params?.handoverId??""));
+    if(!row) return res.status(404).json({error:"handover_not_found"});
+    return requireSiteScope(req,res,next,row.siteId);
+  };
 
 
   app.post("/api/v1/supply/sites", ...secured, requireEnterpriseRole("enterprise_admin"), handle((req,res) => service().createSite({
@@ -66,16 +84,16 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     commodityName:req.body?.commodityName,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,
     harvestAt:req.body?.harvestAt,originEvidenceRef:req.body?.originEvidenceRef,idempotencyKey:req.get("idempotency-key"),
   })));
-  app.post("/api/v1/supply/lots/:lotId/inspections", ...secured, requireEnterpriseRole("enterprise_admin","qc"), handle((req,res) => service().inspectLot({
+  app.post("/api/v1/supply/lots/:lotId/inspections", ...secured, requireEnterpriseRole("enterprise_admin","qc"), requireBodySiteScope("siteId"), handle((req,res) => service().inspectLot({
     tenantId:tenant(res),actorId:actor(res),lotId:req.params.lotId,siteId:req.body?.siteId,
     inspectionType:req.body?.inspectionType,result:req.body?.result,criteria:req.body?.criteria,
     findings:req.body?.findings,correctiveAction:req.body?.correctiveAction,evidenceRef:req.body?.evidenceRef,
   })));
-  app.post("/api/v1/supply/processing", ...secured, requireEnterpriseRole("enterprise_admin","warehouse"), handle((req,res) => service().processLot({
+  app.post("/api/v1/supply/processing", ...secured, requireEnterpriseRole("enterprise_admin","warehouse"), requireBodySiteScope("siteId"), handle((req,res) => service().processLot({
     tenantId:tenant(res),actorId:actor(res),siteId:req.body?.siteId,inputs:req.body?.inputs,outputs:req.body?.outputs,
     lossQuantityMilli:req.body?.lossQuantityMilli,lossReason:req.body?.lossReason,idempotencyKey:req.get("idempotency-key"),
   })));
-  app.post("/api/v1/supply/movements", ...secured, requireEnterpriseRole("enterprise_admin","warehouse","logistics"), handle((req,res) => service().moveStock({
+  app.post("/api/v1/supply/movements", ...secured, requireEnterpriseRole("enterprise_admin","warehouse","logistics"), requireTransferSiteScope, handle((req,res) => service().moveStock({
     tenantId:tenant(res),actorId:actor(res),lotId:req.body?.lotId,fromSiteId:req.body?.fromSiteId,
     toSiteId:req.body?.toSiteId,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,idempotencyKey:req.get("idempotency-key"),
   })));
@@ -96,16 +114,16 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
       res.setHeader("Cache-Control","no-store"); return res.json({data});
     } catch(error) { return res.status(error instanceof SupplyChainError?error.status:500).json({error:error instanceof SupplyChainError?error.code:"supply_chain_operation_failed"}); }
   });
-  app.post("/api/v1/supply/handovers", ...secured, requireEnterpriseRole("enterprise_admin","warehouse","logistics"), handle((req,res) => service().prepareHandover({
+  app.post("/api/v1/supply/handovers", ...secured, requireEnterpriseRole("enterprise_admin","warehouse","logistics"), requireTransferSiteScope, handle((req,res) => service().prepareHandover({
     tenantId:tenant(res),actorId:actor(res),lotId:req.body?.lotId,fromSiteId:req.body?.fromSiteId,toSiteId:req.body?.toSiteId,
     quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,handoverCode:req.body?.handoverCode,
     idempotencyKey:req.get("idempotency-key"),carrierName:req.body?.carrierName,
     vehicleOrContainerRef:req.body?.vehicleOrContainerRef,sealNumber:req.body?.sealNumber,
   })));
-  app.post("/api/v1/supply/handovers/:handoverId/dispatch", ...secured, requireEnterpriseRole("enterprise_admin","logistics"), handle((req,res) => service().dispatchHandover({
+  app.post("/api/v1/supply/handovers/:handoverId/dispatch", ...secured, requireEnterpriseRole("enterprise_admin","logistics"), requireHandoverSiteScope("from"), handle((req,res) => service().dispatchHandover({
     tenantId:tenant(res),actorId:actor(res),handoverId:req.params.handoverId,idempotencyKey:req.get("idempotency-key"),
   })));
-  app.post("/api/v1/supply/handovers/:handoverId/receive", ...secured, requireEnterpriseRole("enterprise_admin","warehouse","logistics","qc"), handle((req,res) => service().receiveHandover({
+  app.post("/api/v1/supply/handovers/:handoverId/receive", ...secured, requireEnterpriseRole("enterprise_admin","warehouse","logistics","qc"), requireHandoverSiteScope("to"), handle((req,res) => service().receiveHandover({
     tenantId:tenant(res),actorId:actor(res),handoverId:req.params.handoverId,
     receivedQuantityMilli:req.body?.receivedQuantityMilli,sealNumber:req.body?.sealNumber,
   })));
