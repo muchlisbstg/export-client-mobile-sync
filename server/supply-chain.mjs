@@ -189,7 +189,7 @@ export function createSupplyChainService(db) {
       const hash=jsonHash({movementType:"receipt",payload});
       const prior=db.prepare("SELECT id,payload_hash AS payloadHash,status FROM inventory_movements WHERE tenant_id=? AND idempotency_key=?").get(tenantId,idempotencyKey);
       if (prior) {
-        if(prior.payloadHash!==hash) throw new SupplyChainError(409,"idempotency_conflict");
+        if(prior.payloadHash!==jsonHash({movementType:"receipt",payload,referenceType:"lot",referenceId:prior.reference_id})) throw new SupplyChainError(409,"idempotency_conflict");
         const old=db.prepare("SELECT id,lot_code AS lotCode FROM supply_lots WHERE tenant_id=? AND id=?").get(tenantId,prior.reference_id);
         return {lotId:old?.id,lotCode:old?.lotCode,movementId:prior.id,duplicate:true};
       }
