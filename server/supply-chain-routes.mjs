@@ -145,7 +145,7 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     toSiteId:req.body?.toSiteId,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,idempotencyKey:req.get("idempotency-key"),
   })));
   app.post("/api/v1/supply/evidence", ...secured, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), handle((req,res) => service().addEvidence({
-    tenantId:tenant(res),actorId:actor(res),roles:res.locals.activeTenant?.roles??[],siteAllowed:(siteType)=>siteAllowedForRoles(res.locals.activeTenant?.roles??[],siteType),entityType:req.body?.entityType,entityId:req.body?.entityId,
+    tenantId:tenant(res),actorId:actor(res),roles:res.locals.activeTenant?.roles??[],siteAllowed:(siteType,siteId)=>siteAllowedForRoles(res.locals.activeTenant?.roles??[],siteType)&&(res.locals.activeTenant?.roles??[]).includes("enterprise_admin")||Boolean(db.prepare("SELECT 1 FROM supply_site_assignments WHERE tenant_id=? AND user_id=? AND site_id=? AND status='active'").get(tenant(res),actor(res),siteId))&&siteAllowedForRoles(res.locals.activeTenant?.roles??[],siteType),entityType:req.body?.entityType,entityId:req.body?.entityId,
     evidenceType:req.body?.evidenceType,storageUri:req.body?.storageUri,contentSha256:req.body?.contentSha256,
     capturedAt:req.body?.capturedAt,metadata:req.body?.metadata,retentionUntil:req.body?.retentionUntil,
   })));
