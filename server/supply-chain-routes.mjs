@@ -13,17 +13,29 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
         crypto.randomUUID(),tenant(res),actor(res)||"anonymous",action,entityType,String(entityId||req.params?.lotId||""),
         outcome,JSON.stringify(details),new Date().toISOString(),String(req.get("x-request-id")??"").slice(0,120)||null
       );
-    } catch { /* Auditing must not mask the primary operation; CI/health checks verify schema readiness. */ }
+      return true;
+    } catch { return false; }
   };
   const handle = (fn) => (req, res) => {
     try {
-      const result = fn(req, res);
-      audit(req,res,{action:`${req.method} ${req.route?.path??req.path}`,outcome:"success",entityId:result?.id??result?.lotId??result?.movementId??result?.handoverId??""});
+      const result = db.transaction(() => {
+        const value = fn(req, res);
+        const recorded = audit(req,res,{action:`${req.method} ${req.route?.path??req.path}`,outcome:"success",entityId:value?.id??value?.lotId??value?.movementId??value?.handoverId??""});
+        if (!recorded) {
+          const error = new Error("audit_write_failed");
+          error.code = "AUDIT_WRITE_FAILED";
+          throw error;
+        }
+        return value;
+      })();
       res.setHeader("Cache-Control", "no-store");
       return res.status(result?.duplicate ? 200 : 201).json({ data: result });
     } catch (error) {
       const denied = error instanceof SupplyChainError && error.status === 403;
-      audit(req,res,{action:`${req.method} ${req.route?.path??req.path}`,outcome:denied?"denied":"failure",details:{errorCode:error instanceof SupplyChainError?error.code:String(error?.code??"internal_error")}});
+      const auditRecorded = audit(req,res,{action:`${req.method} ${req.route?.path??req.path}`,outcome:denied?"denied":"failure",details:{errorCode:error instanceof SupplyChainError?error.code:String(error?.code??"internal_error")}});
+      if (error?.code === "AUDIT_WRITE_FAILED" || !auditRecorded) {
+        return res.status(503).json({ error: "audit_unavailable" });
+      }
       if (error instanceof SupplyChainError) return res.status(error.status).json({ error: error.code });
       if (String(error?.code ?? "").startsWith("SQLITE_CONSTRAINT")) return res.status(409).json({ error: "constraint_conflict" });
       return res.status(500).json({ error: "supply_chain_operation_failed" });
