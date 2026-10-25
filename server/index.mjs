@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { createSupabaseAuth } from "./auth.mjs";
+import { registerSupplyChainRoutes } from "./supply-chain-routes.mjs";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -301,6 +302,8 @@ export function createServer(options = {}) {
     res.locals.activeTenant = membership;
     return next();
   }
+
+  registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, authLimiter });
 
   function readTenantBundle(transactionId) {
     const transaction = db.prepare("SELECT id,buyer_tenant_id AS buyerTenantId,seller_tenant_id AS sellerTenantId,inquiry_id AS inquiryId,status,created_at AS createdAt FROM commercial_transactions WHERE id=?").get(transactionId);
