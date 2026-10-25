@@ -146,6 +146,15 @@ test("migration runs on an isolated representative SQLite backup and leaves sour
     assert.equal(copy.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get().count, 1);
     assert.equal(source.prepare("SELECT COUNT(*) AS count FROM inquiries").get().count, 1);
     assert.equal(source.prepare("PRAGMA table_info(inquiries)").all().some((column) => column.name === "buyer_tenant_id"), false);
+    const restoredPath=path.join(directory,"restored.sqlite");
+    await copy.backup(restoredPath);
+    const restored=new Database(restoredPath);
+    try {
+      assert.deepEqual(restored.prepare("PRAGMA integrity_check").all(),[{integrity_check:"ok"}]);
+      assert.deepEqual(restored.prepare("PRAGMA foreign_key_check").all(),[]);
+      assert.equal(restored.prepare("SELECT COUNT(*) AS count FROM inquiries WHERE id='legacy-row'").get().count,1);
+      assert.equal(restored.prepare("SELECT COUNT(*) AS count FROM enterprise_role_audit").get().count,0);
+    } finally { restored.close(); }
   } finally {
     if (copy?.open) copy.close();
     source.close();
