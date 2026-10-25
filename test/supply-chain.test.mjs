@@ -175,6 +175,12 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     const site=service.createSite({tenantId:"enterprise-1",siteCode:"WH-1",name:"Main Warehouse",siteType:"warehouse",actorId:"user-admin"});
     const supplierSite=service.createSite({tenantId:"enterprise-1",siteCode:"SUP-1",name:"Supplier Intake",siteType:"supplier",actorId:"user-admin"});
     const portSite=service.createSite({tenantId:"enterprise-1",siteCode:"PORT-1",name:"Export Port",siteType:"port_terminal",actorId:"user-admin"});
+    const grantSite=(userId,siteId)=>dbServer.db.prepare(`INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at) VALUES('enterprise-1',?,?,'active','user-admin',?,?)`).run(userId,siteId,now,now);
+    for (const [userId,siteId] of [
+      ["user-warehouse",site.id],["user-warehouse",supplierSite.id],["user-warehouse",portSite.id],
+      ["user-qc",site.id],["user-qc",supplierSite.id],["user-supplier",supplierSite.id],
+      ["user-seller",supplierSite.id],["user-logistics",site.id],["user-logistics",portSite.id],
+    ]) grantSite(userId,siteId);
     const lot=service.receiveLot({tenantId:"enterprise-1",siteId:site.id,lotCode:"LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:1000,unit:"kg",actorId:"user-admin",idempotencyKey:"seed-lot"});
     const headers=(token)=>({Authorization:`Bearer ${token}`});
     const request=(token,path,init={})=>fetch(`${base}${path}`,{...init,headers:{...headers(token),...(init.headers??{})}});
@@ -225,6 +231,19 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
       body:JSON.stringify({siteCode:"WH-2",name:"Secondary Warehouse",siteType:"warehouse"}),
     });
     assert.equal(adminSiteCreation.status,201);
+    const unassignedSite=(await adminSiteCreation.clone().json()).data;
+    const unassignedSiteId=unassignedSite.id;
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,403,
+      "role alone must not grant access to an unassigned site");
+    const grant=await request("token-admin",`/api/v1/supply/sites/${unassignedSiteId}/assignments`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:"user-warehouse"}),
+    });
+    assert.equal(grant.status,201,await grant.clone().text());
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,200);
+    const revoke=await request("token-admin",`/api/v1/supply/sites/${unassignedSiteId}/assignments/user-warehouse`,{method:"DELETE"});
+    assert.equal(revoke.status,200,await revoke.clone().text());
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,403,
+      "revoked site assignment must take effect immediately");
 
     const switchedEnterprise=await request("token-buyer",`/api/v1/supply/stock?siteId=${site.id}`,{
       headers:{"x-active-tenant-id":"other-enterprise"},

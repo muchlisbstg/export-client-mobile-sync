@@ -51,6 +51,19 @@ export function migrateTenantIsolation(db) {
       );
       CREATE INDEX IF NOT EXISTS idx_enterprise_role_audit_target
         ON enterprise_role_audit(enterprise_id,user_id,occurred_at);
+      CREATE TABLE IF NOT EXISTS supply_site_assignments (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        user_id TEXT NOT NULL,
+        site_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+        granted_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id,user_id,site_id),
+        FOREIGN KEY (tenant_id,site_id) REFERENCES supply_sites(tenant_id,id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_supply_site_assignments_user
+        ON supply_site_assignments(tenant_id,user_id,status,site_id);
       CREATE TABLE IF NOT EXISTS supply_audit_events (
         event_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL REFERENCES tenants(id),
