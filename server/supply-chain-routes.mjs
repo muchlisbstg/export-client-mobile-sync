@@ -30,17 +30,16 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     }
   };
   const secured = [authLimiter, auth.authenticate, requireActiveTenant];
-  const siteAllowedForRoles = (roles,siteType) => {
-    if (roles.includes("enterprise_admin")) return true;
-    if (roles.includes("supplier")) return ["supplier","plantation"].includes(siteType);
-    if (roles.includes("warehouse")) return ["warehouse","packing_house"].includes(siteType);
-    if (roles.includes("logistics")) return ["warehouse","in_transit","port_terminal"].includes(siteType);
-    if (roles.includes("qc")) return ["supplier","plantation","packing_house","warehouse","port_terminal"].includes(siteType);
-    if (roles.includes("buyer")) return siteType === "buyer";
-    if (roles.includes("seller")) return ["supplier","plantation","packing_house"].includes(siteType);
-    if (roles.includes("auditor")) return true;
-    return false;
-  };
+  const siteAllowedForRoles = (roles,siteType) => roles.some(role => ({
+    enterprise_admin: ["plantation","supplier","packing_house","warehouse","port_terminal","in_transit","buyer"].includes(siteType),
+    supplier: ["supplier","plantation"].includes(siteType),
+    warehouse: ["warehouse","packing_house"].includes(siteType),
+    logistics: ["warehouse","in_transit","port_terminal"].includes(siteType),
+    qc: ["supplier","plantation","packing_house","warehouse","port_terminal"].includes(siteType),
+    buyer: siteType === "buyer",
+    seller: ["supplier","plantation","packing_house"].includes(siteType),
+    auditor: true,
+  })[role] === true);
   const requireSiteScope = (req,res,next,siteId) => {
     const roles=res.locals.activeTenant?.roles??[];
     const target=db.prepare("SELECT site_type AS siteType,active FROM supply_sites WHERE tenant_id=? AND id=?").get(tenant(res),siteId);
@@ -81,7 +80,7 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     toSiteId:req.body?.toSiteId,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,idempotencyKey:req.get("idempotency-key"),
   })));
   app.post("/api/v1/supply/evidence", ...secured, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), handle((req,res) => service().addEvidence({
-    tenantId:tenant(res),actorId:actor(res),roles:res.locals.activeTenant?.roles??[],entityType:req.body?.entityType,entityId:req.body?.entityId,
+    tenantId:tenant(res),actorId:actor(res),roles:res.locals.activeTenant?.roles??[],siteAllowed:(siteType)=>siteAllowedForRoles(res.locals.activeTenant?.roles??[],siteType),entityType:req.body?.entityType,entityId:req.body?.entityId,
     evidenceType:req.body?.evidenceType,storageUri:req.body?.storageUri,contentSha256:req.body?.contentSha256,
     capturedAt:req.body?.capturedAt,metadata:req.body?.metadata,retentionUntil:req.body?.retentionUntil,
   })));
