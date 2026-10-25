@@ -165,7 +165,7 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
       insertMembership.run("enterprise-1",user,role,now);
     }
     insertMembership.run("other-enterprise","user-outsider","buyer_member",now);
-    dbServer.db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'inactive',?)").run("enterprise-1","user-inactive","buyer_member",now);
+    dbServer.db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'suspended',?)").run("enterprise-1","user-inactive","buyer_member",now);
     for (const [user,role] of [
       ["user-admin","enterprise_admin"],["user-buyer","buyer"],["user-seller","seller"],
       ["user-supplier","supplier"],["user-warehouse","warehouse"],["user-qc","qc"],["user-logistics","logistics"],
