@@ -289,5 +289,9 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     dbServer.db.prepare("UPDATE tenant_memberships SET status='revoked' WHERE tenant_id='enterprise-1' AND user_id='user-buyer'").run();
     assert.equal((await request("token-buyer","/api/v1/enterprise/session")).status,403,"revoked membership must take effect on the next request");
     dbServer.db.prepare("UPDATE tenant_memberships SET status='active' WHERE tenant_id='enterprise-1' AND user_id='user-buyer'").run();
+    const auditCount=dbServer.db.prepare("SELECT COUNT(*) AS count FROM supply_audit_events WHERE tenant_id='enterprise-1'").get().count;
+    assert.ok(auditCount>0,"mutating supply-chain requests must be audited");
+    assert.ok(dbServer.db.prepare("SELECT 1 FROM supply_audit_events WHERE tenant_id='enterprise-1' AND outcome='denied'").get(),"denied evidence/site access must be recorded");
+    assert.throws(()=>dbServer.db.prepare("DELETE FROM supply_audit_events WHERE tenant_id='enterprise-1'").run(),/supply_audit_events_are_append_only/);
   } finally { await dbServer.close(); }
 });
