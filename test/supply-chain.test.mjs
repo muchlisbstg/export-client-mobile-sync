@@ -183,7 +183,8 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     assert.equal(sessionBody.enterprise.id,"enterprise-1");
     assert.deepEqual(sessionBody.roles,["buyer"]);
 
-    assert.equal((await request("token-buyer",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
+    const buyerStock = await request("token-buyer",`/api/v1/supply/stock?siteId=${encodeURIComponent(site.id)}`);
+    assert.equal(buyerStock.status,200,await buyerStock.clone().text());
     assert.equal((await request("token-seller",`/api/v1/supply/lots/${lot.lotId}/trace`)).status,200);
     assert.equal((await request("token-supplier",`/api/v1/supply/stock?siteId=${site.id}`)).status,403);
     assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
