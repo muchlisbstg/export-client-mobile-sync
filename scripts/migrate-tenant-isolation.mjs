@@ -25,6 +25,17 @@ export function migrateTenantIsolation(db) {
         created_at TEXT NOT NULL,
         PRIMARY KEY (tenant_id,user_id)
       );
+      CREATE TABLE IF NOT EXISTS enterprise_role_assignments (
+        enterprise_id TEXT NOT NULL REFERENCES tenants(id),
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('enterprise_admin','buyer','seller','supplier','warehouse','qc','logistics','auditor')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','revoked')),
+        granted_by TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (enterprise_id,user_id,role)
+      );
+      CREATE INDEX IF NOT EXISTS idx_enterprise_roles_user_status
+        ON enterprise_role_assignments(user_id,status,enterprise_id);
       CREATE TABLE IF NOT EXISTS commercial_transactions (
         id TEXT PRIMARY KEY,
         buyer_tenant_id TEXT NOT NULL REFERENCES tenants(id),
