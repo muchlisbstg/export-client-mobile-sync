@@ -36,6 +36,43 @@ export function migrateTenantIsolation(db) {
       );
       CREATE INDEX IF NOT EXISTS idx_enterprise_roles_user_status
         ON enterprise_role_assignments(user_id,status,enterprise_id);
+      CREATE TABLE IF NOT EXISTS enterprise_role_audit (
+        audit_id TEXT PRIMARY KEY,
+        enterprise_id TEXT NOT NULL REFERENCES tenants(id),
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('enterprise_admin','buyer','seller','supplier','warehouse','qc','logistics','auditor')),
+        action TEXT NOT NULL CHECK (action IN ('granted','regranted','revoked','suspended')),
+        previous_status TEXT,
+        new_status TEXT NOT NULL CHECK (new_status IN ('active','suspended','revoked')),
+        actor_user_id TEXT NOT NULL,
+        reason TEXT,
+        occurred_at TEXT NOT NULL,
+        request_id TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_enterprise_role_audit_target
+        ON enterprise_role_audit(enterprise_id,user_id,occurred_at);
+      CREATE TABLE IF NOT EXISTS supply_audit_events (
+        event_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        actor_user_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('success','denied','failure')),
+        details_json TEXT NOT NULL DEFAULT '{}',
+        occurred_at TEXT NOT NULL,
+        request_id TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_supply_audit_tenant_time
+        ON supply_audit_events(tenant_id,occurred_at);
+      CREATE TRIGGER IF NOT EXISTS enterprise_role_audit_no_update
+        BEFORE UPDATE ON enterprise_role_audit BEGIN SELECT RAISE(ABORT,'enterprise_role_audit_is_append_only'); END;
+      CREATE TRIGGER IF NOT EXISTS enterprise_role_audit_no_delete
+        BEFORE DELETE ON enterprise_role_audit BEGIN SELECT RAISE(ABORT,'enterprise_role_audit_is_append_only'); END;
+      CREATE TRIGGER IF NOT EXISTS supply_audit_events_no_update
+        BEFORE UPDATE ON supply_audit_events BEGIN SELECT RAISE(ABORT,'supply_audit_events_are_append_only'); END;
+      CREATE TRIGGER IF NOT EXISTS supply_audit_events_no_delete
+        BEFORE DELETE ON supply_audit_events BEGIN SELECT RAISE(ABORT,'supply_audit_events_are_append_only'); END;
       CREATE TABLE IF NOT EXISTS commercial_transactions (
         id TEXT PRIMARY KEY,
         buyer_tenant_id TEXT NOT NULL REFERENCES tenants(id),

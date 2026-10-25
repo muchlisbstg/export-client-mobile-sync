@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { migrateTenantIsolation } from "../scripts/migrate-tenant-isolation.mjs";
-import { assignEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
+import { assignEnterpriseRole, revokeEnterpriseRole } from "../scripts/assign-enterprise-role.mjs";
 
 function legacyDb() {
   const db = new Database(":memory:");
@@ -60,6 +60,10 @@ test("enterprise role provisioning requires active membership and records explic
       enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"active",grantedBy:"admin-user",
     });
     assert.equal(db.prepare("SELECT granted_by FROM enterprise_role_assignments WHERE user_id='qc-user' AND role='qc'").get().granted_by,"admin-user");
+    const roleAudit = db.prepare("SELECT action,previous_status,new_status,actor_user_id FROM enterprise_role_audit WHERE enterprise_id='enterprise-1' AND user_id='qc-user' AND role='qc'").get();
+    assert.deepEqual(roleAudit,{action:"granted",previous_status:null,new_status:"active",actor_user_id:"admin-user"});
+    assert.throws(() => db.prepare("UPDATE enterprise_role_audit SET actor_user_id='tampered' WHERE user_id='qc-user'").run(), /enterprise_role_audit_is_append_only/);
+    assert.throws(() => db.prepare("DELETE FROM enterprise_role_audit WHERE user_id='qc-user'").run(), /enterprise_role_audit_is_append_only/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"missing-user",role:"warehouse",grantedBy:"admin-user"}),/active membership/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"root",grantedBy:"admin-user"}),/unsupported enterprise role/);
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse"}),/operator ID are required/);
@@ -70,6 +74,13 @@ test("enterprise role provisioning requires active membership and records explic
     process.env.ROLE_PROVISIONING_OPERATOR_TOKEN = "test-admin-token";
     db.prepare("UPDATE tenant_memberships SET status='suspended' WHERE user_id='admin-user'").run();
     assert.throws(()=>assignEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"warehouse",grantedBy:"admin-user"}),/different active enterprise_admin/);
+    db.prepare("UPDATE tenant_memberships SET status='active' WHERE user_id='admin-user'").run();
+    assert.deepEqual(revokeEnterpriseRole(db,{enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",revokedBy:"admin-user",reason:"access no longer needed"}),{
+      enterpriseId:"enterprise-1",userId:"qc-user",role:"qc",status:"revoked",revokedBy:"admin-user",
+    });
+    assert.equal(db.prepare("SELECT status FROM enterprise_role_assignments WHERE enterprise_id='enterprise-1' AND user_id='qc-user' AND role='qc'").get().status,"revoked");
+    const revokedAudit=db.prepare("SELECT action,previous_status,new_status,actor_user_id,reason FROM enterprise_role_audit WHERE user_id='qc-user' AND role='qc' ORDER BY rowid DESC LIMIT 1").get();
+    assert.deepEqual(revokedAudit,{action:"revoked",previous_status:"active",new_status:"revoked",actor_user_id:"admin-user",reason:"access no longer needed"});
   } finally {
     db.close();
     if (previousOperatorToken === undefined) delete process.env.ROLE_PROVISIONING_OPERATOR_TOKEN;
@@ -135,6 +146,15 @@ test("migration runs on an isolated representative SQLite backup and leaves sour
     assert.equal(copy.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get().count, 1);
     assert.equal(source.prepare("SELECT COUNT(*) AS count FROM inquiries").get().count, 1);
     assert.equal(source.prepare("PRAGMA table_info(inquiries)").all().some((column) => column.name === "buyer_tenant_id"), false);
+    const restoredPath=path.join(directory,"restored.sqlite");
+    await copy.backup(restoredPath);
+    const restored=new Database(restoredPath);
+    try {
+      assert.deepEqual(restored.prepare("PRAGMA integrity_check").all(),[{integrity_check:"ok"}]);
+      assert.deepEqual(restored.prepare("PRAGMA foreign_key_check").all(),[]);
+      assert.equal(restored.prepare("SELECT COUNT(*) AS count FROM inquiries WHERE id='legacy-row'").get().count,1);
+      assert.equal(restored.prepare("SELECT COUNT(*) AS count FROM enterprise_role_audit").get().count,0);
+    } finally { restored.close(); }
   } finally {
     if (copy?.open) copy.close();
     source.close();

@@ -382,12 +382,20 @@ export function createSupplyChainService(db) {
   function addEvidence(input) {
     const {tenantId,entityType,entityId,evidenceType,storageUri,actorId}=input;
     if(!["lot","inspection","movement","handover"].includes(entityType)||![tenantId,entityId,evidenceType,storageUri,actorId].every(v=>typeof v==="string"&&v.trim())) throw new SupplyChainError(400,"invalid_evidence");
-    let exists=false;
-    if(entityType==="lot") exists=Boolean(db.prepare("SELECT 1 FROM supply_lots WHERE tenant_id=? AND id=?").get(tenantId,entityId));
-    if(entityType==="inspection") exists=Boolean(db.prepare("SELECT 1 FROM quality_inspections WHERE tenant_id=? AND id=?").get(tenantId,entityId));
-    if(entityType==="movement") exists=Boolean(db.prepare("SELECT 1 FROM inventory_movements WHERE tenant_id=? AND id=?").get(tenantId,entityId));
-    if(entityType==="handover") exists=Boolean(db.prepare("SELECT 1 FROM handovers WHERE tenant_id=? AND id=?").get(tenantId,entityId));
+    const roles=input.roles??[];
+    const allowedByEntity={lot:["enterprise_admin","supplier","warehouse"],inspection:["enterprise_admin","qc"],movement:["enterprise_admin","warehouse","logistics"],handover:["enterprise_admin","warehouse","logistics"]};
+    if(!allowedByEntity[entityType]?.some(role=>roles.includes(role))) throw new SupplyChainError(403,"evidence_role_forbidden");
+    let exists=false, siteId=null;
+    if(entityType==="lot") { const row=db.prepare("SELECT id,origin_site_id AS siteId FROM supply_lots WHERE tenant_id=? AND id=?").get(tenantId,entityId); exists=Boolean(row); siteId=row?.siteId??null; }
+    if(entityType==="inspection") { const row=db.prepare("SELECT id,site_id AS siteId FROM quality_inspections WHERE tenant_id=? AND id=?").get(tenantId,entityId); exists=Boolean(row); siteId=row?.siteId??null; }
+    if(entityType==="movement") { const row=db.prepare("SELECT id,site_id AS siteId FROM inventory_entries WHERE tenant_id=? AND movement_id=? LIMIT 1").get(tenantId,entityId); exists=Boolean(row); siteId=row?.siteId??null; }
+    if(entityType==="handover") { const row=db.prepare("SELECT id,from_site_id AS siteId FROM handovers WHERE tenant_id=? AND id=?").get(tenantId,entityId); exists=Boolean(row); siteId=row?.siteId??null; }
     if(!exists) throw new SupplyChainError(404,"evidence_entity_not_found");
+    if(siteId) {
+      const target=db.prepare("SELECT site_type AS siteType,active FROM supply_sites WHERE tenant_id=? AND id=?").get(tenantId,siteId);
+      if(!target || target.active!==1) throw new SupplyChainError(403,"evidence_site_scope_denied");
+      if(input.siteAllowed && !input.siteAllowed(target.siteType)) throw new SupplyChainError(403,"evidence_site_scope_denied");
+    }
     if(input.contentSha256 && !/^[a-f0-9]{64}$/i.test(input.contentSha256)) throw new SupplyChainError(400,"invalid_evidence_hash");
     let parsed;
     try { parsed=new URL(storageUri); } catch { throw new SupplyChainError(400,"invalid_evidence_uri"); }

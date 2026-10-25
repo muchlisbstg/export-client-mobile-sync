@@ -20,6 +20,29 @@ function hasValidOperatorToken(operatorId, token) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
+export function revokeEnterpriseRole(db, { enterpriseId, userId, role, revokedBy, reason = null }) {
+  if (!enterpriseId?.trim() || !userId?.trim() || !revokedBy?.trim()) throw new Error("enterpriseId, userId, and authorized operator ID are required");
+  if (!allowedRoles.has(role)) throw new Error("unsupported enterprise role");
+  if (!hasValidOperatorToken(revokedBy, process.env.ROLE_PROVISIONING_OPERATOR_TOKEN)) throw new Error("valid operator authorization token is required");
+  const operator = db.prepare(`SELECT 1 AS authorized FROM tenant_memberships m
+    JOIN enterprise_role_assignments a ON a.enterprise_id=m.tenant_id AND a.user_id=m.user_id
+    JOIN tenants t ON t.id=m.tenant_id
+    WHERE m.tenant_id=? AND m.user_id=? AND m.status='active' AND t.status='active'
+      AND a.role='enterprise_admin' AND a.status='active'`).get(enterpriseId,revokedBy);
+  if (revokedBy === userId || !operator) throw new Error("role revocation requires a different active enterprise_admin operator");
+  const transaction = db.transaction(() => {
+    const previous = db.prepare("SELECT status FROM enterprise_role_assignments WHERE enterprise_id=? AND user_id=? AND role=?").get(enterpriseId,userId,role);
+    if (!previous || previous.status === "revoked") throw new Error("active role assignment not found");
+    const occurredAt = new Date().toISOString();
+    db.prepare("UPDATE enterprise_role_assignments SET status='revoked' WHERE enterprise_id=? AND user_id=? AND role=?").run(enterpriseId,userId,role);
+    db.prepare(`INSERT INTO enterprise_role_audit
+      (audit_id,enterprise_id,user_id,role,action,previous_status,new_status,actor_user_id,reason,occurred_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(crypto.randomUUID(),enterpriseId,userId,role,"revoked",previous.status,"revoked",revokedBy,reason,occurredAt);
+  });
+  transaction();
+  return { enterpriseId,userId,role,status:"revoked",revokedBy };
+}
+
 export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy }) {
   if (!enterpriseId?.trim() || !userId?.trim() || !grantedBy?.trim()) {
     throw new Error("enterpriseId, userId, and authorized operator ID are required");
@@ -43,12 +66,20 @@ export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy
     throw new Error("role assignment requires a different active enterprise_admin operator");
   }
   const transaction = db.transaction(() => {
+    const occurredAt = new Date().toISOString();
+    const previous = db.prepare(`SELECT status FROM enterprise_role_assignments
+      WHERE enterprise_id=? AND user_id=? AND role=?`).get(enterpriseId,userId,role);
     db.prepare(`INSERT INTO enterprise_role_assignments
       (enterprise_id,user_id,role,status,granted_by,created_at)
       VALUES (?,?,?,'active',?,?)
       ON CONFLICT(enterprise_id,user_id,role)
       DO UPDATE SET status='active',granted_by=excluded.granted_by,created_at=excluded.created_at`)
-      .run(enterpriseId,userId,role,grantedBy,new Date().toISOString());
+      .run(enterpriseId,userId,role,grantedBy,occurredAt);
+    db.prepare(`INSERT INTO enterprise_role_audit
+      (audit_id,enterprise_id,user_id,role,action,previous_status,new_status,actor_user_id,occurred_at)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(crypto.randomUUID(),enterpriseId,userId,role,previous ? (previous.status === "active" ? "regranted" : "granted") : "granted",
+        previous?.status ?? null,"active",grantedBy,occurredAt);
   });
   transaction();
   return { enterpriseId, userId, role, status: "active", grantedBy };
