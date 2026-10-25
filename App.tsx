@@ -367,7 +367,21 @@ export default function App() {
               <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>Satu enterprise · sesi: {authRole}</Text>
               <Text style={{ color: colors.ink, fontSize: 11, fontWeight: "700", marginTop: 8 }}>Peran yang diberikan server</Text>
               {authEnterpriseRoles.length ? authEnterpriseRoles.map((role) => <Text key={role} style={{ color: colors.green, fontSize: 11, marginTop: 4 }}>• {({ enterprise_admin: "Enterprise Admin", buyer: "Buyer / Procurement", seller: "Seller internal", supplier: "Supplier eksternal", warehouse: "Gudang / Warehouse", qc: "Quality Control (QC)", logistics: "Logistik", auditor: "Auditor / Management" } as Record<string, string>)[role] ?? role}</Text>) : <Text style={{ color: colors.danger, fontSize: 11, marginTop: 4 }}>Tidak ada peran aktif. Hubungi administrator enterprise.</Text>}
-              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 8 }}>Peran di atas berasal dari server; API tetap memvalidasi izin untuk setiap tindakan.</Text>
+              <Text style={{ color: colors.ink, fontSize: 11, fontWeight: "700", marginTop: 10 }}>Kapabilitas sesuai peran</Text>
+              {authEnterpriseRoles.map((role) => {
+                const capabilities: Record<string, string> = {
+                  enterprise_admin: "Kelola lokasi dan operasi yang diizinkan admin",
+                  buyer: "Baca stok dan traceability sesuai kewenangan",
+                  seller: "Baca traceability yang diizinkan",
+                  supplier: "Daftarkan lot pasokan; tidak dapat melihat daftar stok enterprise",
+                  warehouse: "Penerimaan lot, pemrosesan, mutasi dan stok",
+                  qc: "Inspeksi mutu dan pembacaan stok",
+                  logistics: "Mutasi stok dan proses serah-terima / dispatch",
+                  auditor: "Baca stok dan traceability untuk audit",
+                };
+                return <Text key={role + "-capability"} style={{ color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 }}>• {capabilities[role] ?? "Akses terbatas"}</Text>;
+              })}
+              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 8 }}>Kapabilitas ini menjelaskan akses API yang tersedia; modul Buyer/Seller untuk RFQ dan order belum dibuat.</Text>
             </View> : null}
             <Field label="Email" value={authEmail} onChangeText={setAuthEmail} placeholder="email@perusahaan.com" keyboardType="email-address" autoCapitalize="none" />
             <Field label="Password" value={authPassword} onChangeText={setAuthPassword} placeholder="Password" autoCapitalize="none" />
