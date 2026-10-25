@@ -65,6 +65,14 @@ export function migrateTenantIsolation(db) {
       );
       CREATE INDEX IF NOT EXISTS idx_supply_audit_tenant_time
         ON supply_audit_events(tenant_id,occurred_at);
+      CREATE TRIGGER IF NOT EXISTS enterprise_role_audit_no_update
+        BEFORE UPDATE ON enterprise_role_audit BEGIN SELECT RAISE(ABORT,'enterprise_role_audit_is_append_only'); END;
+      CREATE TRIGGER IF NOT EXISTS enterprise_role_audit_no_delete
+        BEFORE DELETE ON enterprise_role_audit BEGIN SELECT RAISE(ABORT,'enterprise_role_audit_is_append_only'); END;
+      CREATE TRIGGER IF NOT EXISTS supply_audit_events_no_update
+        BEFORE UPDATE ON supply_audit_events BEGIN SELECT RAISE(ABORT,'supply_audit_events_are_append_only'); END;
+      CREATE TRIGGER IF NOT EXISTS supply_audit_events_no_delete
+        BEFORE DELETE ON supply_audit_events BEGIN SELECT RAISE(ABORT,'supply_audit_events_are_append_only'); END;
       CREATE TABLE IF NOT EXISTS commercial_transactions (
         id TEXT PRIMARY KEY,
         buyer_tenant_id TEXT NOT NULL REFERENCES tenants(id),
