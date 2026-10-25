@@ -235,6 +235,12 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
     const unassignedSiteId=unassignedSite.id;
     assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,403,
       "role alone must not grant access to an unassigned site");
+    const unassignedTransfer=await request("token-warehouse","/api/v1/supply/movements",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"unassigned-destination-denied"},
+      body:JSON.stringify({lotId:lot.lotId,fromSiteId:site.id,toSiteId:unassignedSiteId,quantityMilli:1,unit:"kg"}),
+    });
+    assert.equal(unassignedTransfer.status,403,
+      "a valid role and source-site assignment must not authorize transfer into an unassigned destination");
     const grant=await request("token-admin",`/api/v1/supply/sites/${unassignedSiteId}/assignments`,{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:"user-warehouse"}),
     });
