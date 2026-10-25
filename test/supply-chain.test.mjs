@@ -127,31 +127,99 @@ test("cross-tenant lot and site access are denied", () => {
   } finally { f.db.close(); }
 });
 
-test("HTTP supply-chain routes require verified identity and active tenant membership", async () => {
+test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC and outsiders", async () => {
+  const roleUsers = {
+    "token-admin": "user-admin",
+    "token-buyer": "user-buyer",
+    "token-seller": "user-seller",
+    "token-supplier": "user-supplier",
+    "token-warehouse": "user-warehouse",
+    "token-qc": "user-qc",
+    "token-outsider": "user-outsider",
+  };
   const dbServer=createServer({
-    host:"127.0.0.1",port:0,supabaseUrl:"https://auth.example.test",supabaseAnonKey:"test-anon",
+    host:"127.0.0.1",port:0,singleEnterpriseId:"enterprise-1",
+    supabaseUrl:"https://auth.example.test",supabaseAnonKey:"test-anon",
     authFetcher:async (_url,init)=>{
       const token=init.headers.Authorization.replace(/^Bearer /,"");
-      const ids={"token-a":"user-a","token-b":"user-b"};
-      return ids[token]?new Response(JSON.stringify({id:ids[token]}),{status:200}):new Response("{}",{status:401});
+      return roleUsers[token]
+        ? new Response(JSON.stringify({id:roleUsers[token]}),{status:200})
+        : new Response("{}",{status:401});
     },
   });
   let base;
   try {
     const started=await dbServer.start(); base=`http://127.0.0.1:${started.port}`;
     migrateSupplyChainDatabase(dbServer.db);
-    dbServer.db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("tenant-a","seller","Seller A",new Date().toISOString());
-    dbServer.db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("tenant-b","seller","Seller B",new Date().toISOString());
-    dbServer.db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES(?,?,?,?)").run("tenant-a","user-a","seller_admin",new Date().toISOString());
-    dbServer.db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES(?,?,?,?)").run("tenant-b","user-b","seller_admin",new Date().toISOString());
+    const now=new Date().toISOString();
+    dbServer.db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("enterprise-1","seller","Single Enterprise",now);
+    dbServer.db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES(?,?,?,?)").run("other-enterprise","buyer","Other Enterprise",now);
+    const insertMembership=dbServer.db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES(?,?,?,?)");
+    const insertRole=dbServer.db.prepare("INSERT INTO enterprise_role_assignments(enterprise_id,user_id,role,created_at) VALUES(?,?,?,?)");
+    for (const [user,role] of [
+      ["user-admin","seller_admin"],["user-buyer","buyer_member"],["user-seller","seller_member"],
+      ["user-supplier","seller_member"],["user-warehouse","seller_member"],["user-qc","seller_member"],
+    ]) {
+      insertMembership.run("enterprise-1",user,role,now);
+    }
+    insertMembership.run("other-enterprise","user-outsider","buyer_member",now);
+    for (const [user,role] of [
+      ["user-admin","enterprise_admin"],["user-buyer","buyer"],["user-seller","seller"],
+      ["user-supplier","supplier"],["user-warehouse","warehouse"],["user-qc","qc"],
+    ]) insertRole.run("enterprise-1",user,role,now);
+
     const service=createSupplyChainService(dbServer.db);
-    const site=service.createSite({tenantId:"tenant-a",siteCode:"A-SITE",name:"Tenant A Site",siteType:"plantation",actorId:"user-a"});
-    const lot=service.receiveLot({tenantId:"tenant-a",siteId:site.id,lotCode:"A-LOT",productId:"coffee",commodityName:"Coffee",quantityMilli:1000,unit:"kg",actorId:"user-a",idempotencyKey:"a-receipt"});
-    const unauth=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`,{headers:{"x-active-tenant-id":"tenant-a"}});
-    assert.equal(unauth.status,401);
-    const cross=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`,{headers:{Authorization:"Bearer token-b","x-active-tenant-id":"tenant-b"}});
-    assert.equal(cross.status,404);
-    const allowed=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`,{headers:{Authorization:"Bearer token-a","x-active-tenant-id":"tenant-a"}});
-    assert.equal(allowed.status,200);
+    const site=service.createSite({tenantId:"enterprise-1",siteCode:"WH-1",name:"Main Warehouse",siteType:"warehouse",actorId:"user-admin"});
+    const lot=service.receiveLot({tenantId:"enterprise-1",siteId:site.id,lotCode:"LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:1000,unit:"kg",actorId:"user-admin",idempotencyKey:"seed-lot"});
+    const headers=(token)=>({Authorization:`Bearer ${token}`});
+    const request=(token,path,init={})=>fetch(`${base}${path}`,{...init,headers:{...headers(token),...(init.headers??{})}});
+
+    const noAuth=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/trace`);
+    assert.equal(noAuth.status,401);
+
+    const enterpriseSession=await request("token-buyer","/api/v1/enterprise/session");
+    assert.equal(enterpriseSession.status,200);
+    const sessionBody=await enterpriseSession.json();
+    assert.equal(sessionBody.enterprise.id,"enterprise-1");
+    assert.deepEqual(sessionBody.roles,["buyer"]);
+
+    assert.equal((await request("token-buyer","/api/v1/supply/stock")).status,200);
+    assert.equal((await request("token-seller",`/api/v1/supply/lots/${lot.lotId}/trace`)).status,200);
+    assert.equal((await request("token-supplier","/api/v1/supply/stock")).status,403);
+    assert.equal((await request("token-warehouse","/api/v1/supply/stock")).status,200);
+    assert.equal((await request("token-qc","/api/v1/supply/stock")).status,200);
+
+    const deniedInspection=await request("token-buyer",`/api/v1/supply/lots/${lot.lotId}/inspections`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:site.id,inspectionType:"receiving",result:"pass"}),
+    });
+    assert.equal(deniedInspection.status,403);
+    const qcInspection=await request("token-qc",`/api/v1/supply/lots/${lot.lotId}/inspections`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:site.id,inspectionType:"receiving",result:"pass"}),
+    });
+    assert.equal(qcInspection.status,201);
+
+    const supplierLot=await request("token-supplier","/api/v1/supply/lots",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"supplier-lot-1"},
+      body:JSON.stringify({siteId:site.id,lotCode:"SUPPLIER-LOT-1",productId:"coffee",commodityName:"Coffee",quantityMilli:500,unit:"kg"}),
+    });
+    assert.equal(supplierLot.status,201);
+
+    const deniedSiteCreation=await request("token-seller","/api/v1/supply/sites",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({siteCode:"NOPE",name:"Not allowed",siteType:"warehouse"}),
+    });
+    assert.equal(deniedSiteCreation.status,403);
+    const adminSiteCreation=await request("token-admin","/api/v1/supply/sites",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({siteCode:"WH-2",name:"Secondary Warehouse",siteType:"warehouse"}),
+    });
+    assert.equal(adminSiteCreation.status,201);
+
+    const switchedEnterprise=await request("token-buyer","/api/v1/supply/stock",{
+      headers:{"x-active-tenant-id":"other-enterprise"},
+    });
+    assert.equal(switchedEnterprise.status,403);
+    const outsider=await request("token-outsider","/api/v1/enterprise/session");
+    assert.equal(outsider.status,403);
   } finally { await dbServer.close(); }
 });
