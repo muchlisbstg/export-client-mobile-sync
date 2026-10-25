@@ -376,9 +376,29 @@ export function createSupplyChainService(db) {
     const l=requireLot(input.tenantId,input.lotId);
     const parents=db.prepare(`SELECT p.id AS lotId,p.lot_code AS lotCode,g.relationship,g.input_quantity_milli AS inputQuantityMilli,g.unit FROM lot_genealogy g JOIN supply_lots p ON p.tenant_id=g.tenant_id AND p.id=g.parent_lot_id WHERE g.tenant_id=? AND g.child_lot_id=?`).all(input.tenantId,l.id);
     const children=db.prepare(`SELECT c.id AS lotId,c.lot_code AS lotCode,g.relationship,g.output_quantity_milli AS outputQuantityMilli,g.unit FROM lot_genealogy g JOIN supply_lots c ON c.tenant_id=g.tenant_id AND c.id=g.child_lot_id WHERE g.tenant_id=? AND g.parent_lot_id=?`).all(input.tenantId,l.id);
+    const ancestors=db.prepare(`WITH RECURSIVE chain(lotId,lotCode,depth,path) AS (
+      SELECT p.id,p.lot_code,1,'|'||p.id||'|' FROM lot_genealogy g
+      JOIN supply_lots p ON p.tenant_id=g.tenant_id AND p.id=g.parent_lot_id
+      WHERE g.tenant_id=? AND g.child_lot_id=?
+      UNION ALL
+      SELECT p.id,p.lot_code,chain.depth+1,chain.path||p.id||'|' FROM chain
+      JOIN lot_genealogy g ON g.tenant_id=? AND g.child_lot_id=chain.lotId
+      JOIN supply_lots p ON p.tenant_id=g.tenant_id AND p.id=g.parent_lot_id
+      WHERE chain.depth<100 AND instr(chain.path,'|'||p.id||'|')=0
+    ) SELECT lotId,lotCode,depth FROM chain ORDER BY depth`).all(input.tenantId,l.id,input.tenantId);
+    const descendants=db.prepare(`WITH RECURSIVE chain(lotId,lotCode,depth,path) AS (
+      SELECT c.id,c.lot_code,1,'|'||c.id||'|' FROM lot_genealogy g
+      JOIN supply_lots c ON c.tenant_id=g.tenant_id AND c.id=g.child_lot_id
+      WHERE g.tenant_id=? AND g.parent_lot_id=?
+      UNION ALL
+      SELECT c.id,c.lot_code,chain.depth+1,chain.path||c.id||'|' FROM chain
+      JOIN lot_genealogy g ON g.tenant_id=? AND g.parent_lot_id=chain.lotId
+      JOIN supply_lots c ON c.tenant_id=g.tenant_id AND c.id=g.child_lot_id
+      WHERE chain.depth<100 AND instr(chain.path,'|'||c.id||'|')=0
+    ) SELECT lotId,lotCode,depth FROM chain ORDER BY depth`).all(input.tenantId,l.id,input.tenantId);
     const inspections=db.prepare("SELECT id,inspection_type AS inspectionType,result,inspected_at AS inspectedAt,inspector_id AS inspectorId,evidence_ref AS evidenceRef FROM quality_inspections WHERE tenant_id=? AND lot_id=? ORDER BY inspected_at").all(input.tenantId,l.id);
     const handovers=db.prepare("SELECT id,handover_code AS handoverCode,status,from_site_id AS fromSiteId,to_site_id AS toSiteId,quantity_milli AS quantityMilli,unit,dispatch_at AS dispatchAt,received_at AS receivedAt,discrepancy_note AS discrepancyNote FROM handovers WHERE tenant_id=? AND lot_id=? ORDER BY created_at").all(input.tenantId,l.id);
-    return {lot:{id:l.id,lotCode:l.lot_code,productId:l.product_id,commodityName:l.commodity_name,status:l.current_status,unit:l.unit},parents,children,inspections,handovers};
+    return {lot:{id:l.id,lotCode:l.lot_code,productId:l.product_id,commodityName:l.commodity_name,status:l.current_status,unit:l.unit},parents,children,ancestors,descendants,inspections,handovers};
   }
   return {createSite,receiveLot,moveStock,processLot,inspectLot,prepareHandover,dispatchHandover,receiveHandover,addEvidence,stock,trace};
 }
