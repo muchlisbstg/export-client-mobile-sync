@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -104,7 +104,7 @@ export default function App() {
   const [catalogCsvNotice, setCatalogCsvNotice] = useState("");
   const [comparisonShareNotice, setComparisonShareNotice] = useState("");
   const [comparisonCsvNotice, setComparisonCsvNotice] = useState("");
-  const catalogSearchRef = useRef<TextInput>(null);
+  const catalogSearchRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   async function signInAdmin() {
     const authUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
