@@ -331,7 +331,7 @@ export function createServer(options = {}) {
   }
 
 
-  registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, authLimiter });
+  registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, requireEnterpriseRole, authLimiter });
 
   function readTenantBundle(transactionId) {
     const transaction = db.prepare("SELECT id,buyer_tenant_id AS buyerTenantId,seller_tenant_id AS sellerTenantId,inquiry_id AS inquiryId,status,created_at AS createdAt FROM commercial_transactions WHERE id=?").get(transactionId);
