@@ -37,7 +37,7 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
   })));
   app.post("/api/v1/supply/processing", ...secured, handle((req,res) => service().processLot({
     tenantId:tenant(res),actorId:actor(res),siteId:req.body?.siteId,inputs:req.body?.inputs,outputs:req.body?.outputs,
-    idempotencyKey:req.get("idempotency-key"),
+    lossQuantityMilli:req.body?.lossQuantityMilli,lossReason:req.body?.lossReason,idempotencyKey:req.get("idempotency-key"),
   })));
   app.post("/api/v1/supply/movements", ...secured, handle((req,res) => service().moveStock({
     tenantId:tenant(res),actorId:actor(res),lotId:req.body?.lotId,fromSiteId:req.body?.fromSiteId,
