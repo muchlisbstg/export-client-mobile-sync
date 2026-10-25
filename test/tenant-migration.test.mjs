@@ -217,3 +217,17 @@ test("migration upgrades an earlier outbox schema without losing pending events"
     assert.doesNotThrow(() => migrateTenantIsolation(db));
   } finally { db.close(); }
 });
+
+
+test("tenant migration rolls back all schema changes when a legacy table is incompatible", () => {
+  const db = new Database(":memory:");
+  try {
+    db.exec("CREATE TABLE inquiries (id TEXT PRIMARY KEY, tracking_code TEXT NOT NULL UNIQUE); CREATE TABLE tenant_sync_outbox (event_id TEXT PRIMARY KEY);");
+    const before = db.prepare("PRAGMA table_info(inquiries)").all().map((column) => column.name);
+    assert.throws(() => migrateTenantIsolation(db), /no such column: next_attempt_at_ms/);
+    assert.deepEqual(db.prepare("PRAGMA table_info(inquiries)").all().map((column) => column.name), before);
+    assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tenants'").get(), undefined);
+    assert.deepEqual(db.prepare("PRAGMA integrity_check").all(), [{ integrity_check: "ok" }]);
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally { db.close(); }
+});
