@@ -34,7 +34,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   } else {
     const db = new Database(dbPath);
     try {
-      process.stdout.write(JSON.stringify(assignEnterpriseRole(db,{enterpriseId,userId,role,grantedBy}) + "\n"));
+      process.stdout.write(JSON.stringify(assignEnterpriseRole(db,{enterpriseId,userId,role})) + "\n");
     } catch (error) {
       process.stderr.write(`${error instanceof Error ? error.message : "role_assignment_failed"}\n`);
       process.exitCode = 1;
