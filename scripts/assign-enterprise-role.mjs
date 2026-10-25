@@ -43,12 +43,20 @@ export function assignEnterpriseRole(db, { enterpriseId, userId, role, grantedBy
     throw new Error("role assignment requires a different active enterprise_admin operator");
   }
   const transaction = db.transaction(() => {
+    const occurredAt = new Date().toISOString();
+    const previous = db.prepare(`SELECT status FROM enterprise_role_assignments
+      WHERE enterprise_id=? AND user_id=? AND role=?`).get(enterpriseId,userId,role);
     db.prepare(`INSERT INTO enterprise_role_assignments
       (enterprise_id,user_id,role,status,granted_by,created_at)
       VALUES (?,?,?,'active',?,?)
       ON CONFLICT(enterprise_id,user_id,role)
       DO UPDATE SET status='active',granted_by=excluded.granted_by,created_at=excluded.created_at`)
-      .run(enterpriseId,userId,role,grantedBy,new Date().toISOString());
+      .run(enterpriseId,userId,role,grantedBy,occurredAt);
+    db.prepare(`INSERT INTO enterprise_role_audit
+      (audit_id,enterprise_id,user_id,role,action,previous_status,new_status,actor_user_id,occurred_at)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(crypto.randomUUID(),enterpriseId,userId,role,previous ? (previous.status === "active" ? "regranted" : "granted") : "granted",
+        previous?.status ?? null,"active",grantedBy,occurredAt);
   });
   transaction();
   return { enterpriseId, userId, role, status: "active", grantedBy };
