@@ -73,6 +73,11 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     if(!row) return res.status(404).json({error:"handover_not_found"});
     return requireSiteScope(req,res,next,row.siteId);
   };
+  const requireLotSiteScope = (req,res,next) => {
+    const row=db.prepare("SELECT origin_site_id AS siteId FROM supply_lots WHERE tenant_id=? AND id=?").get(tenant(res),String(req.params?.lotId??""));
+    if(!row) return res.status(404).json({error:"lot_not_found"});
+    return requireSiteScope(req,res,next,row.siteId);
+  };
 
 
   app.post("/api/v1/supply/sites", ...secured, requireEnterpriseRole("enterprise_admin"), handle((req,res) => service().createSite({
@@ -108,7 +113,7 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
       res.setHeader("Cache-Control","no-store"); return res.json({data});
     } catch(error) { return res.status(error instanceof SupplyChainError?error.status:500).json({error:error instanceof SupplyChainError?error.code:"supply_chain_operation_failed"}); }
   });
-  app.get("/api/v1/supply/lots/:lotId/trace", ...secured, requireEnterpriseRole("enterprise_admin","buyer","seller","warehouse","qc","logistics","auditor"), (req,res) => {
+  app.get("/api/v1/supply/lots/:lotId/trace", ...secured, requireEnterpriseRole("enterprise_admin","buyer","seller","warehouse","qc","logistics","auditor"), requireLotSiteScope, (req,res) => {
     try {
       const data=service().trace({tenantId:tenant(res),lotId:req.params.lotId});
       res.setHeader("Cache-Control","no-store"); return res.json({data});
