@@ -15,6 +15,7 @@ Aplikasi klien mobile untuk katalog produk dan pengiriman **inquiry** kepada bac
 - [Konfigurasi dan keamanan](#konfigurasi-dan-keamanan)
 - [Menjalankan aplikasi](#menjalankan-aplikasi)
 - [Pengujian dan quality gates](#pengujian-dan-quality-gates)
+- [Kepatuhan ekspor global dan Syariah](#kepatuhan-ekspor-global-dan-syariah)
 - [Batasan MVP dan langkah lanjutan](#batasan-mvp-dan-langkah-lanjutan)
 
 ## Ringkasan
@@ -205,6 +206,22 @@ npx expo export --platform android
 - CI Mobile juga menjalankan tes interoperabilitas terhadap backend Web dan Desktop. Lihat [runbook pengujian interoperabilitas](https://github.com/muchlisbstg/export-client-web-sync/blob/main/docs/interop-testing.md) untuk harness tiga repository dan skenario data sintetis.
 
 Sebelum menyatakan suatu perubahan lulus, simpan bukti commit SHA, workflow run, status setiap job, dan log untuk job yang gagal. Jalankan tes terhadap versi dependency/lockfile yang sama dengan commit kandidat.
+
+## Kepatuhan ekspor global dan Syariah
+
+Repository ini merupakan klien mobile untuk platform ekspor global. Platform target harus membantu perusahaan mengelola kewajiban Indonesia sebagai negara asal serta kewajiban negara tujuan dan transit untuk setiap transaksi. **Kepatuhan harus dinilai per transaksi dan yurisdiksi**, berdasarkan produk/HS code, eksportir, importir, end-user, rute, tanggal, kontrak, serta dokumen yang berlaku.
+
+Prinsip arsitektur:
+
+- **Backend adalah otoritas keputusan.** Mobile dan peer sync tidak boleh menetapkan status legal, menghapus hold, atau menyetujui transaksi sendiri.
+- **Rules per yurisdiksi berversi.** Setiap persyaratan memiliki sumber resmi, tanggal berlaku, ruang lingkup, bukti yang diperlukan, status review legal, dan riwayat perubahan.
+- **Indonesia sebagai baseline asal.** Rule pack perlu mencakup perizinan usaha yang relevan, prosedur kepabeanan/PEB, larangan dan pembatasan ekspor, dokumen asal barang, persyaratan komoditas, perpajakan, dan privasi/data sesuai transaksi.
+- **Negara tujuan dan transit sebagai paket terpisah.** Periksa perizinan impor, standar produk/label, pajak/bea, sanksi dan kontrol perdagangan bila berlaku, dokumen asal, serta kewajiban data dan pencatatan yang relevan.
+- **Syariah sebagai tata kelola inti.** Akad, kepemilikan/otoritas menjual, spesifikasi barang, harga, pembayaran, pengiriman, risiko, biaya, keterlambatan, dan pembiayaan harus ditinjau sesuai transaksi oleh penasihat Syariah yang kompeten. Sistem tidak mengeluarkan fatwa otomatis.
+- **Human approval wajib untuk keputusan yang memerlukan keahlian.** Potensi kecocokan sanksi, aturan yang tidak jelas, pengecualian, dokumen meragukan, dan review akad harus masuk antrean review yang dapat diaudit.
+- **Status lulus bukan jaminan hukum universal.** Clearance harus dibatasi pada transaksi, fakta, versi rules, dan periode tertentu; perubahan material memicu evaluasi ulang.
+
+Dokumen desain dan backlog rinci: [Global Export Compliance & Shariah Architecture](docs/global-export-compliance-shariah-architecture.md). Dokumen tersebut menetapkan target arsitektur, model data, state transaksi, kontrol keamanan, acceptance criteria, dan tahapan rollout. Ini adalah persyaratan desain—bukan bukti bahwa kontrol telah diimplementasikan, perusahaan telah patuh, atau sertifikasi Syariah telah diperoleh.
 
 ## Batasan MVP dan langkah lanjutan
 
