@@ -227,7 +227,7 @@ export function createServer(options = {}) {
         try {
           const response = await fetcher(`${item.peerUrl}/api/v1/sync/inquiries`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}`, "x-sync-peer": nodeId },
             body: JSON.stringify(record),
             signal: AbortSignal.timeout(5_000),
           });
@@ -441,8 +441,14 @@ export function createServer(options = {}) {
   app.post("/api/v1/sync/inquiries", (req, res) => {
     if (!secret) return res.status(503).json({ error: "sync_disabled" });
     if (!sameSecret(req.get("authorization"), secret)) return res.status(401).json({ error: "unauthorized" });
+    const declaredPeerId = req.body && typeof req.body === "object" ? req.body.originNodeId : "";
+    const headerPeerId = req.get("x-sync-peer");
+    const peerNodeId = headerPeerId || declaredPeerId;
+    if (peers.length && !peers.some((peer) => peer.nodeId === peerNodeId)) {
+      return res.status(403).json({ error: "sync_peer_not_configured" });
+    }
     if (!validRecord(req.body)) return res.status(400).json({ error: "invalid_sync_record" });
-    const result = receiveRecord(req.body, req.get("x-sync-peer") || req.body.originNodeId);
+    const result = receiveRecord(req.body, peerNodeId);
     if (result.result === "product_not_found") return res.status(404).json({ error: "product_not_found" });
     if (result.result === "conflict") return res.status(409).json({ error: "sync_conflict", ...result });
     return res.status(result.result === "inserted" ? 201 : 200).json({ result: result.result });
