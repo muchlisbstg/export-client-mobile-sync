@@ -190,7 +190,7 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
 
     const buyerStock = await request("token-buyer",`/api/v1/supply/stock?siteId=${encodeURIComponent(site.id)}`);
     assert.equal(buyerStock.status,403,await buyerStock.clone().text());
-    assert.equal((await request("token-seller",`/api/v1/supply/lots/${lot.lotId}/trace`)).status,200);
+    assert.equal((await request("token-seller",`/api/v1/supply/lots/${lot.lotId}/trace`)).status,403,"seller cannot read trace for a lot outside seller-accessible site types");
     assert.equal((await request("token-supplier",`/api/v1/supply/stock?siteId=${site.id}`)).status,403);
     assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
     assert.equal((await request("token-qc",`/api/v1/supply/stock?siteId=${site.id}`)).status,200);
