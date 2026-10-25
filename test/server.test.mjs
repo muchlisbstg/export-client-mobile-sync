@@ -295,6 +295,7 @@ test("single-enterprise mode locks context and disables legacy cross-enterprise 
     db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)").run("enterprise-a","buyer-admin","buyer_admin",now);
     db.prepare("INSERT INTO tenants (id,tenant_type,display_name,created_at) VALUES (?,?,?,?)").run("other-enterprise","buyer","Other Enterprise",now);
     db.prepare("INSERT INTO tenant_memberships (tenant_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)").run("other-enterprise","outsider","buyer_admin",now);
+    db.prepare("INSERT INTO enterprise_role_assignments (enterprise_id,user_id,role,status,created_at) VALUES (?,?,?,'active',?)").run("enterprise-a","buyer-admin","buyer",now);
     const headers = (token, enterpriseId) => ({ authorization: `Bearer ${token}`, ...(enterpriseId ? {"x-active-tenant-id":enterpriseId} : {}), "content-type":"application/json" });
     assert.equal((await fetch(`${base}/api/v1/transactions`,{headers:{"x-active-tenant-id":"enterprise-a"}})).status,401);
     assert.equal((await fetch(`${base}/api/v1/transactions`,{headers:headers("buyer-token","other-enterprise")})).status,403);
