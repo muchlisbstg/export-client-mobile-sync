@@ -16,12 +16,22 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     }
   };
   const secured = [authLimiter, auth.authenticate, requireActiveTenant];
+  const requireLotIntakeScope = (req,res,next) => {
+    const roles = res.locals.activeTenant?.roles ?? [];
+    if (roles.includes("enterprise_admin") || roles.includes("warehouse")) return next();
+    if (!roles.includes("supplier")) return res.status(403).json({ error: "enterprise_role_forbidden" });
+    const siteId = String(req.body?.siteId ?? "").trim();
+    const supplierSite = db.prepare("SELECT 1 FROM supply_sites WHERE tenant_id=? AND id=? AND site_type='supplier' AND active=1")
+      .get(tenant(res),siteId);
+    if (!supplierSite) return res.status(403).json({ error: "supplier_site_scope_denied" });
+    return next();
+  };
 
   app.post("/api/v1/supply/sites", ...secured, requireEnterpriseRole("enterprise_admin"), handle((req,res) => service().createSite({
     tenantId:tenant(res),actorId:actor(res),siteCode:req.body?.siteCode,name:req.body?.name,siteType:req.body?.siteType,
     countryCode:req.body?.countryCode,addressText:req.body?.addressText,
   })));
-  app.post("/api/v1/supply/lots", ...secured, requireEnterpriseRole("enterprise_admin","supplier","warehouse"), handle((req,res) => service().receiveLot({
+  app.post("/api/v1/supply/lots", ...secured, requireEnterpriseRole("enterprise_admin","supplier","warehouse"), requireLotIntakeScope, handle((req,res) => service().receiveLot({
     tenantId:tenant(res),actorId:actor(res),siteId:req.body?.siteId,lotCode:req.body?.lotCode,productId:req.body?.productId,
     commodityName:req.body?.commodityName,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,
     harvestAt:req.body?.harvestAt,originEvidenceRef:req.body?.originEvidenceRef,idempotencyKey:req.get("idempotency-key"),
