@@ -95,6 +95,7 @@ export function createServer(options = {}) {
   const port = Number(options.port ?? process.env.API_PORT ?? 4001);
   const host = options.host ?? process.env.API_HOST ?? "127.0.0.1";
   const dbPath = options.dbPath ?? process.env.API_DB_PATH ?? path.join(here, "data", "api.sqlite");
+  const singleEnterpriseId = String(options.singleEnterpriseId ?? process.env.SINGLE_ENTERPRISE_ID ?? "").trim();
   fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
@@ -265,6 +266,14 @@ export function createServer(options = {}) {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ user: res.locals.authIdentity });
   });
+  app.get("/api/v1/enterprise/session", authLimiter, auth.authenticate, (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!singleEnterpriseId) return res.status(503).json({ error: "single_enterprise_not_configured" });
+    if (!tenantSchemaReady()) return res.status(503).json({ error: "tenant_schema_not_ready" });
+    const context = resolveEnterpriseMembership(res.locals.authIdentity.id);
+    if (!context) return res.status(403).json({ error: "enterprise_access_denied" });
+    return res.json({ enterprise: { id: context.id, displayName: context.displayName }, user: res.locals.authIdentity, roles: context.roles });
+  });
   app.get("/api/v1/admin/session", authLimiter, auth.authenticate, auth.requireAdmin, (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ ok: true, user: res.locals.authIdentity });
@@ -291,17 +300,36 @@ export function createServer(options = {}) {
     const columns = new Set(db.prepare("PRAGMA table_info(inquiries)").all().map((row) => row.name));
     return ["buyer_tenant_id", "seller_tenant_id", "tenant_migration_state"].every((name) => columns.has(name));
   }
+  function resolveEnterpriseMembership(userId) {
+    if (!singleEnterpriseId || !tenantSchemaReady()) return null;
+    const membership = db.prepare(`SELECT t.id, t.tenant_type AS tenantType, t.display_name AS displayName,
+      t.status AS tenantStatus, m.role AS legacyRole, m.status AS membershipStatus
+      FROM tenants t JOIN tenant_memberships m ON m.tenant_id=t.id
+      WHERE m.user_id=? AND t.id=?`).get(userId, singleEnterpriseId);
+    if (!membership || membership.tenantStatus !== "active" || membership.membershipStatus !== "active") return null;
+    const roles = db.prepare(`SELECT role FROM enterprise_role_assignments
+      WHERE enterprise_id=? AND user_id=? AND status='active' ORDER BY role`).all(singleEnterpriseId, userId).map((row) => row.role);
+    return { ...membership, role: roles[0] ?? null, roles };
+  }
   function requireActiveTenant(req, res, next) {
     if (!tenantSchemaReady()) return res.status(503).json({ error: "tenant_schema_not_ready" });
+    if (!singleEnterpriseId) return res.status(503).json({ error: "single_enterprise_not_configured" });
     const identity = res.locals.authIdentity;
-    const tenantId = String(req.get("x-active-tenant-id") ?? "").trim();
-    if (!tenantId) return res.status(400).json({ error: "active_tenant_required" });
-    const membership = db.prepare(`SELECT t.id, t.tenant_type AS tenantType, t.status AS tenantStatus, m.role, m.status AS membershipStatus
-      FROM tenants t JOIN tenant_memberships m ON m.tenant_id=t.id WHERE m.user_id=? AND t.id=?`).get(identity?.id ?? "", tenantId);
-    if (!identity || !membership || membership.tenantStatus !== "active" || membership.membershipStatus !== "active") return res.status(403).json({ error: "tenant_access_denied" });
+    const requestedId = String(req.get("x-active-tenant-id") ?? "").trim();
+    if (requestedId && requestedId !== singleEnterpriseId) return res.status(403).json({ error: "enterprise_context_locked" });
+    const membership = identity ? resolveEnterpriseMembership(identity.id) : null;
+    if (!membership) return res.status(403).json({ error: "enterprise_access_denied" });
     res.locals.activeTenant = membership;
     return next();
   }
+  function requireEnterpriseRole(...allowedRoles) {
+    return (_req, res, next) => {
+      const roles = res.locals.activeTenant?.roles ?? [];
+      if (!allowedRoles.some((role) => roles.includes(role))) return res.status(403).json({ error: "enterprise_role_forbidden" });
+      return next();
+    };
+  }
+
 
   registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, authLimiter });
 
