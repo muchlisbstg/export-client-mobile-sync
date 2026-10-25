@@ -106,13 +106,25 @@ export function migrateSupplyChain(db) {
       CREATE TRIGGER IF NOT EXISTS inventory_entry_no_insert_after_post BEFORE INSERT ON inventory_entries
         WHEN (SELECT status FROM inventory_movements WHERE tenant_id=NEW.tenant_id AND id=NEW.movement_id) <> 'draft'
         BEGIN SELECT RAISE(ABORT,'inventory_movement_not_draft'); END;
+      CREATE TRIGGER IF NOT EXISTS movement_post_requires_entries BEFORE UPDATE OF status ON inventory_movements
+        WHEN OLD.status='draft' AND NEW.status='posted' AND NOT EXISTS (SELECT 1 FROM inventory_entries WHERE tenant_id=NEW.tenant_id AND movement_id=NEW.id)
+        BEGIN SELECT RAISE(ABORT,'empty_movement'); END;
+      CREATE TRIGGER IF NOT EXISTS movement_post_prevents_negative_stock BEFORE UPDATE OF status ON inventory_movements
+        WHEN OLD.status='draft' AND NEW.status='posted' AND EXISTS (
+          SELECT 1 FROM inventory_entries e WHERE e.tenant_id=NEW.tenant_id AND e.movement_id=NEW.id
+          GROUP BY e.lot_id,e.site_id
+          HAVING COALESCE((SELECT SUM(prior.quantity_milli_delta) FROM inventory_entries prior
+            JOIN inventory_movements posted ON posted.tenant_id=prior.tenant_id AND posted.id=prior.movement_id
+            WHERE prior.tenant_id=e.tenant_id AND prior.lot_id=e.lot_id AND prior.site_id=e.site_id AND posted.status='posted'),0)
+            + SUM(e.quantity_milli_delta) < 0
+        ) BEGIN SELECT RAISE(ABORT,'insufficient_stock'); END;
       CREATE TRIGGER IF NOT EXISTS posted_movement_no_mutation BEFORE UPDATE ON inventory_movements
         WHEN OLD.status='posted' AND (
           NEW.tenant_id<>OLD.tenant_id OR NEW.idempotency_key<>OLD.idempotency_key OR
           NEW.payload_hash<>OLD.payload_hash OR NEW.movement_type<>OLD.movement_type OR
           NEW.occurred_at<>OLD.occurred_at OR NEW.recorded_by<>OLD.recorded_by OR
           NEW.reference_type IS NOT OLD.reference_type OR NEW.reference_id IS NOT OLD.reference_id OR
-          NEW.created_at<>OLD.created_at OR NEW.status NOT IN ('posted','reversed')
+          NEW.created_at<>OLD.created_at OR NEW.status<>OLD.status
         ) BEGIN SELECT RAISE(ABORT,'posted_inventory_movement_is_immutable'); END;
     `);
   })();
