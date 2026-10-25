@@ -231,6 +231,19 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
       body:JSON.stringify({siteCode:"WH-2",name:"Secondary Warehouse",siteType:"warehouse"}),
     });
     assert.equal(adminSiteCreation.status,201);
+    const unassignedSite=(await adminSiteCreation.clone().json()).data;
+    const unassignedSiteId=unassignedSite.id;
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,403,
+      "role alone must not grant access to an unassigned site");
+    const grant=await request("token-admin",`/api/v1/supply/sites/${unassignedSiteId}/assignments`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:"user-warehouse"}),
+    });
+    assert.equal(grant.status,201,await grant.clone().text());
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,200);
+    const revoke=await request("token-admin",`/api/v1/supply/sites/${unassignedSiteId}/assignments/user-warehouse`,{method:"DELETE"});
+    assert.equal(revoke.status,200,await revoke.clone().text());
+    assert.equal((await request("token-warehouse",`/api/v1/supply/stock?siteId=${unassignedSiteId}`)).status,403,
+      "revoked site assignment must take effect immediately");
 
     const switchedEnterprise=await request("token-buyer",`/api/v1/supply/stock?siteId=${site.id}`,{
       headers:{"x-active-tenant-id":"other-enterprise"},
