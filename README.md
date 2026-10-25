@@ -30,6 +30,54 @@ Aplikasi klien mobile untuk katalog produk dan pengiriman **inquiry** kepada bac
 - **Data katalog:** katalog demo; jangan menganggapnya sebagai katalog produksi.
 - **Tidak ada deployment otomatis** dari perintah export Android yang dijelaskan pada README ini.
 
+## Roadmap arsitektur transaksi ekspor
+
+Implementasi dibagi menjadi lima tahap berurutan. Tahapan ini adalah **rencana arsitektur dan gerbang penerimaan**, bukan klaim bahwa seluruh fitur sudah tersedia. Gunakan data sintetis sampai keamanan, legal/kepabeanan, dan review Syariah yang relevan disetujui.
+
+### Tahap 1 — Fondasi transaksi
+
+- Katalog ekspor dengan klasifikasi produk, termasuk SKU, spesifikasi, negara asal, dan klasifikasi HS yang diverifikasi sesuai komoditas.
+- Alur bisnis **inquiry → quotation → order → kontrak**, dengan status, versi, tenggat, pembatalan/perubahan, dan jejak persetujuan.
+- Tenant isolation, autentikasi, otorisasi server-side, dan audit trail untuk setiap akses serta perubahan penting.
+
+**Gerbang penerimaan:** uji positif dan negatif isolasi lintas tenant, otorisasi per objek, transisi status yang sah, serta jejak audit yang dapat ditelusuri.
+
+### Tahap 2 — Sampel dan dokumen
+
+- Mendukung sampel berbayar maupun gratis.
+- Mendukung prototype dan pengiriman sementara untuk evaluasi atau penggunaan terbatas.
+- Kelola dokumen dan status verifikasi, tenggat, retur/pengembalian, serta bukti pengiriman dan penerimaan.
+
+**Gerbang penerimaan:** setiap sampel memiliki tujuan, pihak penanggung biaya, nilai pabean yang akurat, dokumen yang diperlukan, tenggat, status, dan bukti pengiriman/retur. Sampel gratis tidak otomatis bernilai pabean nol atau bebas bea/izin.
+
+### Tahap 3 — Pembayaran
+
+- Advance payment/pembayaran di muka.
+- Deposit dan pembayaran berdasarkan milestone.
+- Rekonsiliasi pembayaran, refund/reversal, serta pencatatan multi-mata uang dengan jumlah, kode mata uang, kurs/sumber kurs, biaya, dan waktu yang jelas.
+- Integrasi provider dimulai di **sandbox**; transaksi nyata tidak diaktifkan sebelum integrasi, rekonsiliasi, keamanan, dan persetujuan terkait diverifikasi.
+
+**Gerbang penerimaan:** idempotency, verifikasi signature webhook, penanganan pembayaran parsial/duplikat, refund, rekonsiliasi terhadap sumber tepercaya, dan pengujian kegagalan. Status *settled* tidak boleh ditentukan hanya dari input klien atau screenshot.
+
+### Tahap 4 — Metode pembayaran perdagangan internasional
+
+- Documentary Collection **D/P (Documents against Payment)** dan **D/A (Documents against Acceptance)**.
+- **Letter of Credit (LC)**.
+- Jaminan bank, standby LC, dan produk pembiayaan perdagangan yang relevan untuk transaksi.
+
+Metode ini dimasukkan setelah kebutuhan bank/provider, negara, mata uang, kontrak, komoditas, dan persetujuan hukum serta Syariah ditentukan. Cantuman dalam roadmap bukan bukti integrasi tersedia atau bahwa suatu metode otomatis sesuai Syariah.
+
+**Gerbang penerimaan:** persyaratan dokumen dan tenggat, pihak/bank terkait, biaya, kondisi klaim atau penolakan dokumen, penanganan discrepancy, serta review hukum dan Syariah untuk struktur transaksi yang sebenarnya telah didokumentasikan.
+
+### Tahap 5 — Gerbang kepatuhan
+
+- Validasi aturan Indonesia sebagai negara asal serta negara tujuan dan transit, sesuai komoditas, klasifikasi, pihak, rute, dan tanggal transaksi.
+- Review legal dan kepabeanan dengan bukti dan versi aturan yang berlaku.
+- Review Syariah berdasarkan akad dan alur transaksi yang sebenarnya.
+- Pengujian keamanan, tenant isolation, integrasi, CI, serta persetujuan manusia sebelum go-live.
+
+**Gerbang penerimaan:** keputusan memiliki pemilik/reviewer, sumber dan versi aturan, bukti pemeriksaan, waktu berlaku, status/masa berlaku, serta audit trail. Sistem harus menahan atau mengeskalasi kasus yang belum jelas; AI dan klien mobile tidak boleh memberi persetujuan akhir. Go-live memerlukan bukti CI untuk commit kandidat dan persetujuan manusia yang berwenang.
+
 ## Arsitektur sistem
 
 ### Diagram konteks
@@ -67,6 +115,57 @@ Aplikasi klien mobile untuk katalog produk dan pengiriman **inquiry** kepada bac
 ```
 
 Diagram ini menggambarkan batas komponen dan alur tingkat tinggi, bukan diagram deployment produksi. Setiap peer menyimpan data lokal; arsitektur ini **bukan** database terpusat dengan satu master.
+
+### Rantai pasok ekspor: perkebunan → packing house → gudang → pelabuhan
+
+Arsitektur bisnis juga perlu memodelkan rantai pasok fisik dari sumber komoditas hingga keberangkatan ekspor. Lokasi-lokasi ini adalah entitas operasional yang dapat dikelola atau dihubungkan melalui platform; pencantumannya **tidak berarti fasilitas fisik atau integrasi logistik telah tersedia**.
+
+```text
+┌────────────────────────┐
+│ Perkebunan / pemasok   │
+│ kebun, petani, panen   │
+└────────────┬───────────┘
+             │ lot panen + asal + waktu
+             ▼
+┌────────────────────────┐
+│ Collection / Packing   │
+│ House                  │
+│ timbang, sortasi, mutu │
+│ grading, kemasan       │
+└────────────┬───────────┘
+             │ lot produksi + QC + label
+             ▼
+┌────────────────────────┐
+│ Gudang                 │
+│ stok, lokasi, kondisi, │
+│ batch, FEFO/FIFO       │
+└────────────┬───────────┘
+             │ picking + packing list
+             ▼
+┌────────────────────────┐
+│ Pelabuhan / terminal   │
+│ booking, gate-in,      │
+│ kontainer, cut-off     │
+└────────────┬───────────┘
+             │ dokumen + status keberangkatan
+             ▼
+┌────────────────────────┐
+│ Kapal / carrier →      │
+│ importir / tujuan      │
+└────────────────────────┘
+```
+
+#### Entitas dan kontrol yang dibutuhkan
+
+- **Perkebunan dan pemasok:** identitas pemasok/kebun, lokasi dan asal komoditas, tanggal panen, lot panen, kuantitas, praktik/sertifikat jika relevan, serta bukti asal. Klaim keberlanjutan atau sertifikasi hanya boleh ditampilkan jika diverifikasi.
+- **Packing house:** penerimaan dan penimbangan, sortasi/grading, pemeriksaan mutu, proses pengolahan, penggunaan bahan kemasan, label, hasil/kehilangan produksi, serta hubungan antara lot input dan batch output.
+- **Gudang:** penerimaan/pengeluaran, stok per lot/batch, lokasi rak, status karantina/hold, kondisi penyimpanan, kedaluwarsa bila relevan, FEFO/FIFO sesuai jenis komoditas, cycle count, dan bukti serah terima.
+- **Pelabuhan/terminal:** jadwal cut-off, booking carrier/forwarder, nomor kontainer dan seal, gate-in, VGM bila diwajibkan, status pemeriksaan, keberangkatan, serta referensi bill of lading dan dokumen terkait.
+- **Ketertelusuran end-to-end:** setiap perpindahan mencatat identitas lot, kuantitas dan satuan, lokasi asal/tujuan, waktu, aktor, status, bukti, dan referensi dokumen. Pecah/gabung lot harus mempertahankan relasi parent-child dan rekonsiliasi kuantitas.
+- **Kualitas dan kepatuhan:** inspeksi, sampel uji, sertifikat atau izin komoditas bila diwajibkan, kondisi transportasi/suhu untuk barang yang sensitif, dan hold/release yang hanya dapat dilakukan oleh peran berwenang.
+- **Integrasi mitra:** koneksi ke ERP/WMS, timbangan, laboratorium, forwarder, terminal, carrier, dan sistem kepabeanan harus melalui adapter terkontrol, autentikasi, idempotency, pencatatan sumber, dan rekonsiliasi; jangan menganggap API mitra tersedia tanpa verifikasi.
+
+**Gerbang penerimaan rantai pasok:** simulasi satu pengiriman dari lot panen sampai kontainer berangkat; rekonsiliasi kuantitas di setiap titik; uji lot hilang/duplikat, stok negatif, lot ditahan, perubahan lokasi, dokumen kedaluwarsa, serta akses lintas tenant. Data lokasi kebun, pemasok, pelanggan, dan dokumen komersial wajib mengikuti kontrol akses dan kebijakan retensi.
 
 ### Komponen dan tanggung jawab
 
