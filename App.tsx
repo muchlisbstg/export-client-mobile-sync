@@ -360,7 +360,7 @@ export default function App() {
         </View>
 
         <View style={[styles.card, { padding: 14, marginTop: 10 }]}>
-          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login admin" : "Login admin"}</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setShowAuthPanel((open) => !open)}><Text style={{ color: colors.green, fontWeight: "800" }}>{showAuthPanel ? "Tutup login admin" : "Login enterprise"}</Text></Pressable>
           {showAuthPanel && <>
             {authAccessToken ? <View style={{ marginTop: 10, padding: 12, backgroundColor: "#edf2e8", borderRadius: 8 }}>
               <Text accessibilityRole="text" style={{ color: colors.green, fontWeight: "800" }}>{authEnterpriseName || "Enterprise"}</Text>
