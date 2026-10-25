@@ -1,31 +1,62 @@
+import crypto from "node:crypto";
 import { createSupplyChainService, SupplyChainError } from "./supply-chain.mjs";
 
 export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, requireEnterpriseRole, authLimiter }) {
   const service = () => createSupplyChainService(db);
   const actor = (res) => res.locals.authIdentity?.id ?? "";
   const tenant = (res) => res.locals.activeTenant?.id ?? "";
+  const audit = (req,res,{action,outcome,entityType="route",entityId="",details={}}) => {
+    try {
+      db.prepare(`INSERT INTO supply_audit_events
+        (event_id,tenant_id,actor_user_id,action,entity_type,entity_id,outcome,details_json,occurred_at,request_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
+        crypto.randomUUID(),tenant(res),actor(res)||"anonymous",action,entityType,String(entityId||req.params?.lotId||""),
+        outcome,JSON.stringify(details),new Date().toISOString(),String(req.get("x-request-id")??"").slice(0,120)||null
+      );
+    } catch { /* Auditing must not mask the primary operation; CI/health checks verify schema readiness. */ }
+  };
   const handle = (fn) => (req, res) => {
     try {
       const result = fn(req, res);
+      audit(req,res,{action:`${req.method} ${req.route?.path??req.path}`,outcome:"success",entityId:result?.id??result?.lotId??result?.movementId??result?.handoverId??""});
       res.setHeader("Cache-Control", "no-store");
       return res.status(result?.duplicate ? 200 : 201).json({ data: result });
     } catch (error) {
+      const denied = error instanceof SupplyChainError && error.status === 403;
+      audit(req,res,{action:`${req.method} ${req.route?.path??req.path}`,outcome:denied?"denied":"failure",details:{errorCode:error instanceof SupplyChainError?error.code:String(error?.code??"internal_error")}});
       if (error instanceof SupplyChainError) return res.status(error.status).json({ error: error.code });
       if (String(error?.code ?? "").startsWith("SQLITE_CONSTRAINT")) return res.status(409).json({ error: "constraint_conflict" });
       return res.status(500).json({ error: "supply_chain_operation_failed" });
     }
   };
   const secured = [authLimiter, auth.authenticate, requireActiveTenant];
-  const requireLotIntakeScope = (req,res,next) => {
-    const roles = res.locals.activeTenant?.roles ?? [];
-    if (roles.includes("enterprise_admin") || roles.includes("warehouse")) return next();
-    if (!roles.includes("supplier")) return res.status(403).json({ error: "enterprise_role_forbidden" });
-    const siteId = String(req.body?.siteId ?? "").trim();
-    const supplierSite = db.prepare("SELECT 1 FROM supply_sites WHERE tenant_id=? AND id=? AND site_type='supplier' AND active=1")
-      .get(tenant(res),siteId);
-    if (!supplierSite) return res.status(403).json({ error: "supplier_site_scope_denied" });
+  const siteAllowedForRoles = (roles,siteType) => {
+    if (roles.includes("enterprise_admin")) return true;
+    if (roles.includes("supplier")) return ["supplier","plantation"].includes(siteType);
+    if (roles.includes("warehouse")) return ["warehouse","packing_house"].includes(siteType);
+    if (roles.includes("logistics")) return ["warehouse","in_transit","port_terminal"].includes(siteType);
+    if (roles.includes("qc")) return ["supplier","plantation","packing_house","warehouse","port_terminal"].includes(siteType);
+    if (roles.includes("buyer")) return siteType === "buyer";
+    if (roles.includes("seller")) return ["supplier","plantation","packing_house"].includes(siteType);
+    if (roles.includes("auditor")) return true;
+    return false;
+  };
+  const requireSiteScope = (req,res,next,siteId) => {
+    const roles=res.locals.activeTenant?.roles??[];
+    const target=db.prepare("SELECT site_type AS siteType,active FROM supply_sites WHERE tenant_id=? AND id=?").get(tenant(res),siteId);
+    if (!target || target.active!==1 || !siteAllowedForRoles(roles,target.siteType)) {
+      audit(req,res,{action:"site_scope_check",outcome:"denied",entityType:"site",entityId:siteId,details:{roles}});
+      return res.status(403).json({error:"site_scope_denied"});
+    }
     return next();
   };
+  const requireLotIntakeScope = (req,res,next) => {
+    const roles = res.locals.activeTenant?.roles ?? [];
+    if (!roles.some(role=>["enterprise_admin","warehouse","supplier"].includes(role))) return res.status(403).json({ error: "enterprise_role_forbidden" });
+    return requireSiteScope(req,res,next,String(req.body?.siteId??"").trim());
+  };
+  const requireStockSiteScope = (req,res,next) => requireSiteScope(req,res,next,String(req.query.siteId??"").trim());
+
 
   app.post("/api/v1/supply/sites", ...secured, requireEnterpriseRole("enterprise_admin"), handle((req,res) => service().createSite({
     tenantId:tenant(res),actorId:actor(res),siteCode:req.body?.siteCode,name:req.body?.name,siteType:req.body?.siteType,
@@ -50,11 +81,11 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     toSiteId:req.body?.toSiteId,quantityMilli:req.body?.quantityMilli,unit:req.body?.unit,idempotencyKey:req.get("idempotency-key"),
   })));
   app.post("/api/v1/supply/evidence", ...secured, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), handle((req,res) => service().addEvidence({
-    tenantId:tenant(res),actorId:actor(res),entityType:req.body?.entityType,entityId:req.body?.entityId,
+    tenantId:tenant(res),actorId:actor(res),roles:res.locals.activeTenant?.roles??[],entityType:req.body?.entityType,entityId:req.body?.entityId,
     evidenceType:req.body?.evidenceType,storageUri:req.body?.storageUri,contentSha256:req.body?.contentSha256,
     capturedAt:req.body?.capturedAt,metadata:req.body?.metadata,retentionUntil:req.body?.retentionUntil,
   })));
-  app.get("/api/v1/supply/stock", ...secured, requireEnterpriseRole("enterprise_admin","buyer","warehouse","qc","logistics","auditor"), (req,res) => {
+  app.get("/api/v1/supply/stock", ...secured, requireEnterpriseRole("enterprise_admin","buyer","warehouse","qc","logistics","auditor"), requireStockSiteScope, (req,res) => {
     try {
       const data=service().stock({tenantId:tenant(res),siteId:String(req.query.siteId??"")});
       res.setHeader("Cache-Control","no-store"); return res.json({data});
