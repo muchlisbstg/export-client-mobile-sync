@@ -125,6 +125,7 @@ test("unknown role names cannot be used to construct an authorization grant", as
   const policy = createEnterpriseAuthorization({ db, singleEnterpriseId: "enterprise-1" });
   const response = await new Promise((resolve) => {
     const res = {
+      locals: {},
       status(code) { this.statusCode = code; return this; },
       json(body) { resolve({ status: this.statusCode, body }); },
     };
