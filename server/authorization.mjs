@@ -65,7 +65,7 @@ export function createEnterpriseAuthorization({ db, singleEnterpriseId }) {
     const allowed = new Set(allowedRoles.filter((role) => ENTERPRISE_ROLES.has(role)));
     return (_req, res, next) => {
       const roles = res.locals.activeTenant?.roles ?? [];
-      if (allowed.size === 0 || !allowedRoles.some((role) => allowed.has(role)) || !allowedRoles.some((role) => roles.includes(role))) {
+      if (allowed.size === 0 || !allowedRoles.some((role) => allowed.has(role) && roles.includes(role))) {
         return res.status(403).json({ error: "enterprise_role_forbidden" });
       }
       return next();
