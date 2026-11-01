@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { createSupabaseAuth } from "./auth.mjs";
+import { createEnterpriseAuthorization } from "./authorization.mjs";
 import { registerSupplyChainRoutes } from "./supply-chain-routes.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -300,34 +301,15 @@ export function createServer(options = {}) {
     const columns = new Set(db.prepare("PRAGMA table_info(inquiries)").all().map((row) => row.name));
     return ["buyer_tenant_id", "seller_tenant_id", "tenant_migration_state"].every((name) => columns.has(name));
   }
+  const authorization = createEnterpriseAuthorization({ db, singleEnterpriseId });
   function resolveEnterpriseMembership(userId) {
-    if (!singleEnterpriseId || !tenantSchemaReady()) return null;
-    const membership = db.prepare(`SELECT t.id, t.tenant_type AS tenantType, t.display_name AS displayName,
-      t.status AS tenantStatus, m.role AS legacyRole, m.status AS membershipStatus
-      FROM tenants t JOIN tenant_memberships m ON m.tenant_id=t.id
-      WHERE m.user_id=? AND t.id=?`).get(userId, singleEnterpriseId);
-    if (!membership || membership.tenantStatus !== "active" || membership.membershipStatus !== "active") return null;
-    const roles = db.prepare(`SELECT role FROM enterprise_role_assignments
-      WHERE enterprise_id=? AND user_id=? AND status='active' ORDER BY role`).all(singleEnterpriseId, userId).map((row) => row.role);
-    return { ...membership, role: roles[0] ?? null, roles };
+    return authorization.resolveEnterpriseMembership(userId);
   }
   function requireActiveTenant(req, res, next) {
-    if (!tenantSchemaReady()) return res.status(503).json({ error: "tenant_schema_not_ready" });
-    if (!singleEnterpriseId) return res.status(503).json({ error: "single_enterprise_not_configured" });
-    const identity = res.locals.authIdentity;
-    const requestedId = String(req.get("x-active-tenant-id") ?? "").trim();
-    if (requestedId && requestedId !== singleEnterpriseId) return res.status(403).json({ error: "enterprise_context_locked" });
-    const membership = identity ? resolveEnterpriseMembership(identity.id) : null;
-    if (!membership) return res.status(403).json({ error: "enterprise_access_denied" });
-    res.locals.activeTenant = membership;
-    return next();
+    return authorization.requireActiveEnterprise(req, res, next);
   }
   function requireEnterpriseRole(...allowedRoles) {
-    return (_req, res, next) => {
-      const roles = res.locals.activeTenant?.roles ?? [];
-      if (!allowedRoles.some((role) => roles.includes(role))) return res.status(403).json({ error: "enterprise_role_forbidden" });
-      return next();
-    };
+    return authorization.requireEnterpriseRole(...allowedRoles);
   }
 
 
