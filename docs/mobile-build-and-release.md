@@ -36,3 +36,6 @@ Build artifacts are not production releases. No workflow in this repository may 
 ## Dependency integrity
 
 `package.json` and `package-lock.json` must describe the same Expo SDK compatibility matrix. CI must run `npm ci` against the committed lockfile; it must not silently resolve a different dependency graph for a release build.
+## Physical Android device testing
+
+The current Android API fallback `http://10.0.2.2:4001` is intended for the Android emulator host bridge, not a physical handset. Before testing API-backed flows on a phone, build with `EXPO_PUBLIC_API_URL` set to a reachable API origin (prefer HTTPS) and configure the required Supabase public client settings. Do not treat a successful APK installation as proof of backend connectivity.
