@@ -33,3 +33,6 @@ Before producing an IPA:
 ## Governance
 
 Build artifacts are not production releases. No workflow in this repository may submit to an app store, deploy a production backend, or publish a public release without explicit human approval.
+## Dependency integrity
+
+`package.json` and `package-lock.json` must describe the same Expo SDK compatibility matrix. CI must run `npm ci` against the committed lockfile; it must not silently resolve a different dependency graph for a release build.
