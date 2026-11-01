@@ -1,0 +1,61 @@
+name: Android Preview APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "app.json"
+      - "app.config.*"
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
+      - "App.*"
+      - "assets/**"
+      - ".github/workflows/android-preview-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-preview-apk:
+    name: Build installable Android preview APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Validate Expo dependency compatibility
+        run: npx expo install --check
+
+      - name: Generate Android native project
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-client-android-preview-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
