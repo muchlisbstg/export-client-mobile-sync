@@ -78,7 +78,7 @@ export function bootstrapEnterprise(db, {
         crypto.randomUUID(),
         normalized.enterpriseId,
         normalized.userId,
-        normalized.userId,
+        "system:enterprise-bootstrap",
         "Initial enterprise administrator bootstrap using one-time operator token",
         completedAt,
       );
