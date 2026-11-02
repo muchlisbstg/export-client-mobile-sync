@@ -47,8 +47,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Install locked JavaScript dependencies
-        run: npm ci --no-audit
+      - name: Install locked JavaScript dependencies from committed lockfile
+        shell: bash
+        run: |
+          lockfile_sha_before=$(sha256sum package-lock.json | cut -d' ' -f1)
+          npm ci --no-audit
+          lockfile_sha_after=$(sha256sum package-lock.json | cut -d' ' -f1)
+          test "$lockfile_sha_before" = "$lockfile_sha_after"
+          printf 'package_lock_sha256=%s\\n' "$lockfile_sha_after" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture npm audit report
         continue-on-error: true
