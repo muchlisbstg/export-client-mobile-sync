@@ -47,8 +47,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Generate experimental lockfile
+        run: npm install --package-lock-only --ignore-scripts
       - name: Install locked JavaScript dependencies
         run: npm ci --no-audit
+      - name: Upload generated experimental lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk58-override-lockfile-${{ github.sha }}
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Capture npm audit report
         continue-on-error: true
