@@ -31,7 +31,7 @@ jobs:
           java-version: "17"
 
       - name: Preserve committed lockfile for review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: export-client-package-lock-${{ github.sha }}
           path: package-lock.json
@@ -74,7 +74,7 @@ jobs:
           node -e 'const fs=require("node:fs"); const r=JSON.parse(fs.readFileSync("npm-audit.json","utf8")); const v=r.metadata&&r.metadata.vulnerabilities; if(v){const s=["info","low","moderate","high","critical"].map(k=>k+"="+(v[k]||0)).join(", "); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,"- Vulnerabilities: "+s+", total="+(v.total||0)+"\n");} else if(r.error){fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,"- npm audit returned an error object: "+JSON.stringify(r.error)+"\n");} else {throw new Error("Unrecognized npm audit JSON shape");}'
           echo "npm audit exit code: $audit_exit_code (report preserved; non-zero can indicate findings)"
       - name: Upload npm audit evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: npm-audit-${{ github.sha }}
@@ -105,7 +105,7 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: export-client-android-preview-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
