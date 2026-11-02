@@ -40,15 +40,15 @@ export function bootstrapEnterprise(db, {
     if (!exists) throw new Error("tenant schema must be migrated before enterprise bootstrap");
   }
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS enterprise_bootstrap_state (
+      singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+      enterprise_id TEXT NOT NULL UNIQUE,
+      initial_admin_user_id TEXT NOT NULL,
+      completed_at TEXT NOT NULL
+    )
+  `);
   const initialize = db.transaction(() => {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS enterprise_bootstrap_state (
-        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
-        enterprise_id TEXT NOT NULL UNIQUE,
-        initial_admin_user_id TEXT NOT NULL,
-        completed_at TEXT NOT NULL
-      )
-    `);
     if (db.prepare("SELECT 1 FROM enterprise_bootstrap_state WHERE singleton_id=1").get()) {
       throw new Error("enterprise bootstrap has already been completed");
     }
