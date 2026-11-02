@@ -679,10 +679,10 @@ Implementasi harus tetap mengikuti prinsip branch dan pull request terpisah, pen
 Temuan penting dari pemeriksaan workflow `main`:
 
 - `package-lock.json` sudah menjadi bagian dari source control.
-- Android Preview menjalankan `npm ci --no-audit`; job tersebut tidak menghasilkan laporan kerentanan npm.
-- Workflow `main` saat ini masih menggunakan `contents: write`, persisted checkout credentials, serta regenerasi dan push-back lockfile pada pull request.
-- PR [#83](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83) mengusulkan mode read-only dan validasi lockfile committed, tetapi masih berstatus draft/open pada saat dokumentasi ini diperbarui.
+- PR [#83](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83) sudah merged: workflow menggunakan `contents: read`, `persist-credentials: false`, dan tidak lagi menulis lockfile ke branch.
+- Android Preview pada PR #83 berhasil; post-merge Mobile CI pada `main` juga lulus untuk `verify` dan `interoperability`.
+- Baseline workflow memakai `npm ci --no-audit`; laporan vulnerability masih perlu dihasilkan sebagai artifact audit tersendiri.
 
 Tidak ada jumlah atau tingkat kerentanan yang dinyatakan di sini karena laporan lengkap `npm audit --json` yang terikat pada commit dan lockfile tertentu belum ditemukan dalam bukti repository yang diperiksa. **Jangan menyimpulkan “bebas vulnerability” hanya dari keberhasilan `npm ci` atau build APK.**
 
-Rincian manifest, provenance lockfile, kondisi workflow, bukti yang belum tersedia, format vulnerability register, dan checklist penutupan tersedia pada [Phase 1E — Dependency & Lockfile Audit](docs/phase-1e-dependency-lockfile-audit-2026-11-02.md).
+Rincian manifest, provenance lockfile, kondisi workflow, bukti audit yang belum tersedia, format vulnerability register, dan checklist penutupan tersedia pada [Phase 1E — Dependency & Lockfile Audit](docs/phase-1e-dependency-lockfile-audit-2026-11-02.md).
