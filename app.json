@@ -7,6 +7,8 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.muchlisbstg.exportclient",
+      "buildNumber": "1",
       "supportsTablet": true
     },
     "android": {
