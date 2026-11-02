@@ -1,0 +1,80 @@
+name: iOS Simulator Build
+
+on:
+  pull_request:
+    paths:
+      - "app.json"
+      - "eas.json"
+      - "package.json"
+      - "package-lock.json"
+      - "App.tsx"
+      - "src/**"
+      - ".github/workflows/ios-simulator-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator-build:
+    name: Build unsigned iOS Simulator app
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies from committed lockfile
+        run: npm ci
+
+      - name: Validate Expo SDK dependency compatibility
+        run: npx expo install --check
+
+      - name: Generate iOS native project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: pod install
+
+      - name: Build for iOS Simulator without code signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE="$(find ios -maxdepth 2 -name '*.xcworkspace' -print -quit)"
+          test -n "$WORKSPACE"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme ExportClient \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="ios/DerivedData/Build/Products/Debug-iphonesimulator/ExportClient.app"
+          test -d "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" ios-simulator-app.zip
+
+      - name: Upload iOS Simulator artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-${{ github.sha }}
+          path: ios-simulator-app.zip
+          if-no-files-found: error
+          retention-days: 7

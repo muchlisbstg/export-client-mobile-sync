@@ -1,0 +1,62 @@
+name: iOS Prebuild Validation
+
+on:
+  pull_request:
+    paths:
+      - "app.json"
+      - "eas.json"
+      - "package.json"
+      - "package-lock.json"
+      - "App.tsx"
+      - "src/**"
+      - ".github/workflows/ios-prebuild.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-prebuild-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-prebuild:
+    name: Generate and validate iOS native project
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies from committed lockfile
+        run: npm ci
+
+      - name: Validate Expo SDK dependency compatibility
+        run: npx expo install --check
+
+      - name: Validate resolved Expo configuration
+        run: npx expo config --type public
+
+      - name: Generate iOS native project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Verify generated Xcode project
+        shell: bash
+        run: |
+          test -d ios
+          test -f ios/Podfile
+          find ios -maxdepth 3 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -print
+
+      - name: Upload generated iOS project for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-prebuild-${{ github.sha }}
+          path: ios/
+          if-no-files-found: error
+          retention-days: 7
