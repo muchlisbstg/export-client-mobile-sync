@@ -105,18 +105,18 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   const configuredId = String(process.env.SINGLE_ENTERPRISE_ID ?? "").trim();
   const token = process.env.ENTERPRISE_BOOTSTRAP_TOKEN;
   const expectedTokenHash = process.env.ENTERPRISE_BOOTSTRAP_TOKEN_SHA256;
-  const protectedDbPath = path.resolve("server/data/api.sqlite");
+  const protectedDbPath = path.join("server", "data", "api.sqlite");
   if (!dbPath || !enterpriseId || !userId || !displayName) {
-    process.stderr.write("Usage: node scripts/bootstrap-enterprise.mjs <staging-sqlite-db-path> <enterprise-id> <supabase-user-id> <display-name>\\n");
+    process.stderr.write("Usage: node scripts/bootstrap-enterprise.mjs <staging-sqlite-db-path> <enterprise-id> <supabase-user-id> <display-name>\n");
     process.exitCode = 2;
-  } else if (path.resolve(dbPath) === protectedDbPath) {
-    process.stderr.write("Refusing bootstrap against the default application database; use a dedicated staging database path\\n");
+  } else if (path.resolve(dbPath).endsWith(protectedDbPath)) {
+    process.stderr.write("Refusing bootstrap against the default application database; use a dedicated staging database path\n");
     process.exitCode = 2;
   } else if (!configuredId || configuredId !== enterpriseId) {
-    process.stderr.write("Refusing bootstrap: enterprise ID must exactly match configured SINGLE_ENTERPRISE_ID\\n");
+    process.stderr.write("Refusing bootstrap: enterprise ID must exactly match configured SINGLE_ENTERPRISE_ID\n");
     process.exitCode = 2;
   } else if (!token || !expectedTokenHash) {
-    process.stderr.write("Refusing bootstrap: secure bootstrap token and SHA-256 hash must be configured\\n");
+    process.stderr.write("Refusing bootstrap: secure bootstrap token and SHA-256 hash must be configured\n");
     process.exitCode = 2;
   } else {
     let db;
@@ -125,9 +125,9 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
       db.pragma("foreign_keys = ON");
       process.stdout.write(JSON.stringify(bootstrapEnterprise(db, {
         enterpriseId, userId, displayName, token, expectedTokenHash,
-      })) + "\\n");
+      })) + "\n");
     } catch (error) {
-      process.stderr.write(`${error instanceof Error ? error.message : "enterprise_bootstrap_failed"}\\n`);
+      process.stderr.write(`${error instanceof Error ? error.message : "enterprise_bootstrap_failed"}\n`);
       process.exitCode = 1;
     } finally {
       db?.close();
