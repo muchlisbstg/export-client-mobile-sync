@@ -52,7 +52,7 @@ test("first enterprise bootstrap creates one seller enterprise, initial admin me
       action: "granted",
       previous_status: null,
       new_status: "active",
-      actor_user_id: "supabase-user-001",
+      actor_user_id: "system:enterprise-bootstrap",
     });
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM enterprise_bootstrap_state").get().count, 1);
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
