@@ -51,6 +51,7 @@ jobs:
         run: npm ci --no-audit
 
       - name: Capture npm audit report
+        continue-on-error: true
         shell: bash
         run: |
           set +e
