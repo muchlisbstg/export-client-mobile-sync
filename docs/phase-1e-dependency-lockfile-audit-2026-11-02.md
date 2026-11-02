@@ -86,67 +86,102 @@ PR #83 merged and implemented the following controls:
 
 These controls are now present on `main`. The workflow permissions and Android Preview result were verified from the merged PR and its run.
 
-## 6. npm vulnerability audit — evidence gap
+## 6. npm vulnerability audit — captured evidence
 
-The baseline Android Preview workflow used `npm ci --no-audit`, so it did not produce npm's vulnerability report. A follow-up workflow change is being proposed to run `npm audit --json`, retain its exit code, and upload the raw JSON/stderr as a 30-day artifact. Until that run completes and its artifact is inspected, this report does not state a finding count or severity distribution. The required report must include:
+<badge>Evidence captured</badge>
 
-- Exact commit SHA and lockfile blob/commit reference.
-- Node.js and npm versions.
-- Audit command and timestamp.
-- Full finding metadata (package, advisory/GHSA, severity, affected range, fix availability, dependency path).
-- Risk disposition, owner, and target remediation/review date.
+A full `npm audit --json` was captured from the Android Preview workflow on the reviewed candidate dependency graph.
 
-Accordingly, this report intentionally does **not** state a finding count, severity distribution, or a “zero vulnerabilities” result.
-
-### Reproducible evidence capture
-
-Run from a clean checkout of the target commit, using the project's supported Node.js runtime:
-
-```bash
-git rev-parse HEAD
-node --version
-npm --version
-npm ci --ignore-scripts --no-audit
-npm audit --json > npm-audit.json
-```
-
-Record the exit code of `npm audit` separately because a non-zero exit can indicate findings and should not cause the JSON report to be discarded. Review whether disabling lifecycle scripts is appropriate for the audit environment; do not treat this command as the application's full build validation.
-
-Attach the raw report to a restricted CI artifact or a reviewed audit record. Avoid committing secrets, environment files, private registry credentials, or sensitive internal URLs.
-
-### Required vulnerability register
-
-| Field | Required value |
+| Evidence field | Value |
 |---|---|
-| Package | Exact affected package |
-| Advisory | GHSA/CVE/npm advisory identifier |
-| Severity | npm-reported severity, plus contextual risk assessment |
-| Dependency path | Direct/transitive path from the lockfile |
-| Affected range | Advisory's affected version range |
-| Installed version | Exact locked version |
-| Fix availability | Fixed version or no fix available |
-| Runtime exposure | Production, build-time, development-only, or unclear |
-| Decision | Remediate, mitigate, accept temporarily, or investigate |
-| Owner / due date | Named accountable owner and review deadline |
-| Evidence | Audit report, commit SHA, and validation run |
+| GitHub Actions run | [#41368487390 — Android Preview APK](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41368487390) |
+| Audit artifact | `npm-audit-824a5087e2804a3d76051deaa69e74a2b997cd49` (artifact ID `13108555694`) |
+| Candidate workflow merge SHA | `824a5087e2804a3d76051deaa69e74a2b997cd49` |
+| Base branch SHA | `fdbc6a1f55d7048b9780014aa3a28965d7ee2cbe` |
+| Node.js / npm | `v22.23.4` / `10.9.9` |
+| Audit timestamp | `2026-11-02T00:41:39Z` |
+| package.json SHA-256 | `99a64c95ed0d5db0fd74605faf8e11d5da0fb850d6b930e4cd88c489574d627e` |
+| package-lock.json SHA-256 | `ad82e377a2a4d0cb7b54f6da4f16b1a8e9e8ed7ced355c4c1bf291046a498b87` |
+| npm audit exit code | `1` (findings present) |
+| npm audit stderr | Empty |
 
-Do not automatically upgrade Expo/React Native packages solely to silence an advisory. Validate compatibility against the Expo SDK matrix and run the complete regression gate before accepting dependency changes.
+### 6.1 Severity summary
+
+| Severity | Count |
+|---|---:|
+| Info | 0 |
+| Low | 0 |
+| Moderate | **11** |
+| High | **0** |
+| Critical | **0** |
+| **Total** | **11** |
+
+npm reports 531 dependency nodes in the audit metadata: 500 production, 9 development, and 23 optional dependencies (peer and peer-optional counts are zero).
+
+### 6.2 Affected package nodes
+
+The 11 npm package findings in the committed lockfile are:
+
+| Package | Locked version | Dependency classification | npm severity |
+|---|---:|---|---|
+| `@expo/cli` | `58.1.18` | Transitive | Moderate |
+| `@expo/config` | `58.0.10` | Transitive | Moderate |
+| `@expo/config-plugins` | `58.0.11` | Transitive | Moderate |
+| `@expo/fingerprint` | `0.21.8` | Transitive | Moderate |
+| `@expo/inline-modules` | `0.2.8` | Transitive | Moderate |
+| `@expo/local-build-cache-provider` | `58.0.10` | Transitive | Moderate |
+| `@expo/metro-config` | `58.0.20` | Transitive | Moderate |
+| `@expo/prebuild-config` | `58.0.18` | Transitive | Moderate |
+| `expo` | `58.0.22` | Direct | Moderate |
+| `glob` | `13.0.6` | Transitive | Moderate |
+| `minimatch` | `10.2.6` | Transitive | Moderate |
+
+Only `expo` is a direct dependency in this list; the remaining 10 findings are transitive nodes in the Expo tooling/dependency graph. The npm count is a count of affected package nodes, not 11 distinct CVEs.
+
+### 6.3 Underlying advisories
+
+The JSON report identifies two underlying GitHub advisories:
+
+1. [GHSA-3g3m-2fjr-6pw4 — glob AbortSignal cancellation bypass](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4). Reported affected range: `glob >=9.0.0 <=14.0.1`; locked `glob` version: `13.0.6`.
+2. [GHSA-g3hv-75wg-m249 — minimatch globparts amplification DoS](https://github.com/advisories/GHSA-g3hv-75wg-m249). Reported affected range: `minimatch <11.0.1`; locked `minimatch` version: `10.2.6`.
+
+These advisories propagate through the Expo dependency chain, which is why npm lists multiple affected Expo package nodes. Severity is moderate for all 11 package findings in this report.
+
+### 6.4 Remediation decision
+
+**Decision recorded for this candidate: do not run blanket `npm audit fix` and do not downgrade Expo.**
+
+The audit's suggested automatic fix for the direct `expo` dependency is `expo@53.0.11`, marked as a SemVer-major change from the repository's Expo SDK 58 baseline (`expo ~58.0.22`). Applying that suggestion would move the project across an Expo SDK major version and is not an acceptable automatic security patch for this candidate.
+
+Recommended remediation path:
+
+- Investigate an Expo SDK 58-compatible patch/minor dependency resolution for `glob` and `minimatch`.
+- Evaluate any npm override or transitive update in a dedicated feature branch; do not commit an override until Expo compatibility and native build tests pass.
+- Preserve the Expo SDK 58 manifest baseline unless a separately reviewed SDK migration is approved.
+- Re-run the exact audit and all quality gates after any dependency change, comparing the same manifest/lockfile SHA pair.
+- If no compatible fix exists, record a temporary risk acceptance with accountable owner, rationale, controls, and a dated review deadline. No such acceptance is assumed by this report.
+
+This is a documented recommendation, not an approved risk acceptance or a declaration that the vulnerabilities are harmless. Runtime exploitability and whether affected CLI/config packages ship in the app bundle require a separate dependency-path and build-output review.
+
+### 6.5 Raw report
+
+The raw `npm-audit.json`, stderr, exit code, and provenance metadata are retained together in the 30-day artifact linked above. The report is not committed to the public repository; the artifact preserves the full machine-readable evidence without publishing a separate copy in source control.
+
 
 ## 7. Decision and release gate
 
-**Decision: HOLD on closing Phase 1E.** Lockfile synchronization and PR #83 workflow hardening are verified, but a complete `npm audit --json` report and the final same-candidate quality-gate evidence are still pending.
+**Decision: HOLD on closing Phase 1E.** The npm audit report is now captured: 11 moderate findings, no high/critical findings. The recommended remediation path is documented above, but the security fixes or a human-approved temporary risk acceptance have not yet been completed.
 
 Before closing Phase 1E:
 
-- [ ] Capture a full npm audit report against the exact candidate commit and lockfile.
-- [ ] Classify every finding and record a human-approved disposition.
-- [ ] Confirm the Expo SDK compatibility matrix after any proposed dependency change.
-- [ ] Require `npm ci` against the committed lockfile.
-- [ ] Require tests, typecheck, Expo compatibility, Android export, Prebuild, and debug APK build to pass on the same candidate commit.
+- [x] Capture the full npm audit report and provenance against the exact candidate dependency graph.
+- [x] Record vulnerability counts by severity and identify the two underlying advisories.
+- [x] Document the no-downgrade/no-blanket-fix decision and the recommended SDK-compatible remediation path.
 - [x] Review and merge PR #83; confirm least-privilege workflow permissions on `main`.
-- [ ] Run and inspect the `npm audit --json` artifact from the candidate commit.
-- [ ] Record npm vulnerability counts by severity and a disposition for each advisory.
-- [ ] Confirm all quality gates pass on the same candidate commit.
+- [x] Verify Mobile CI `verify` and `interoperability` on candidate run [#41368487343](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41368487343).
+- [ ] Complete Android Preview debug APK build and artifact upload on run [#41368487390](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41368487390).
+- [ ] Approve and implement SDK-compatible remediation, or record explicit temporary risk acceptance.
+- [ ] Re-run audit and all quality gates on the post-remediation manifest/lockfile SHA pair.
 - [ ] Record CI run URLs, job results, artifact identity, and candidate commit SHA.
 - [ ] Keep debug APK testing separate from production AAB signing, release approval, and store submission.
 - [ ] Obtain required security, legal, operational, and Syariah approvals before any production release or real transaction enablement.
