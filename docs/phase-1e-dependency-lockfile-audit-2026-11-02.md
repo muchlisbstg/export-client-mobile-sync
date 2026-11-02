@@ -15,8 +15,8 @@
 | Lockfile committed | `package-lock.json` exists on `main`; blob SHA `0a70fe20b92e46c837fe17f60840e22c49fa0256` | Present |
 | Lockfile synchronization PR | PR [#82](https://github.com/muchlisbstg/export-client-mobile-sync/pull/82) merged; merge commit `9db00cd3e02e606b1fe4f3edfce739504f963cfb` | Merged |
 | CI install | Android Preview workflow runs `npm ci --no-audit` | Locked install is present; npm audit is explicitly skipped in this workflow |
-| Workflow write scope | Current `main` workflow has `contents: write` and persisted checkout credentials | Hardening not yet merged |
-| Read-only workflow proposal | PR [#83](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83) is open and draft | Pending review/CI |
+| Workflow write scope | PR #83 merged at `a6870515955cb239ff669d939732e7ec0100d09c`; workflow uses `contents: read` and `persist-credentials: false` | Hardened |
+| Read-only workflow | PR [#83](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83) merged; Android Preview passed | Merged and build-verified |
 | npm vulnerability findings | No matching `npm audit --json` evidence found in reviewed repository files | **Not verified** |
 | Production release | Preview workflow builds a debug APK; no production signing or store submission | Not a production release gate |
 
@@ -62,22 +62,21 @@ The current `main` branch contains `package-lock.json`. This establishes that th
 
 ## 4. Android Preview workflow — current main behavior
 
-The workflow at `.github/workflows/android-preview-apk.yml` currently:
+The workflow at `.github/workflows/android-preview-apk.yml` on `main` now:
 
 1. Runs on relevant pull-request path changes or manual dispatch.
-2. Requests `contents: write`.
-3. Checks out the PR head with persisted credentials enabled.
-4. Regenerates the lockfile from the manifest using `npm install --package-lock-only --ignore-scripts --no-audit`.
-5. On pull requests, commits and pushes a changed lockfile to the PR branch.
-6. Runs `npm ci --no-audit`.
-7. Runs application tests, TypeScript typecheck, Expo compatibility check, Android JS export, Expo Prebuild, and Gradle `assembleDebug`.
-8. Uploads a debug APK artifact with 14-day retention.
+2. Requests only `contents: read`.
+3. Checks out with `persist-credentials: false`.
+4. Preserves the committed lockfile as an artifact; it does not rewrite or push dependency changes.
+5. Runs `npm ci --no-audit` against the committed graph.
+6. Runs application tests, TypeScript typecheck, Expo compatibility check, Android JS export, Expo Prebuild, and Gradle `assembleDebug`.
+7. Uploads the debug APK artifact with 14-day retention.
 
-**Security implication:** the workflow executes dependency lifecycle/build tooling while retaining a write-capable repository token. The minimum-permission principle supports removing write access when the workflow no longer needs to push commits.
+PR #83 merged at `a6870515955cb239ff669d939732e7ec0100d09c`. The PR's Android Preview workflow completed successfully. Its PR Mobile CI interoperability job had a failure, but the post-merge Mobile CI run on `main` completed both `verify` and `interoperability` successfully.
 
 ## 5. Workflow hardening proposal
 
-PR #83, currently open and draft at the time of this review, proposes:
+PR #83 merged and implemented the following controls:
 
 - Change workflow permission from `contents: write` to `contents: read`.
 - Disable persisted checkout credentials.
@@ -85,11 +84,11 @@ PR #83, currently open and draft at the time of this review, proposes:
 - Validate the reviewed committed dependency graph with `npm ci`.
 - Keep the lockfile as a reviewed source-control artifact.
 
-This is a proposal, not the current `main` behavior. Do not mark the control complete until PR #83 has been reviewed, its workflow has passed on the intended commit, and the change is merged by an authorized human.
+These controls are now present on `main`. The workflow permissions and Android Preview result were verified from the merged PR and its run.
 
 ## 6. npm vulnerability audit — evidence gap
 
-The Android Preview workflow uses `npm ci --no-audit`; therefore that job does not produce npm's vulnerability report. The reviewed repository evidence did not include a complete audit JSON output with:
+The baseline Android Preview workflow used `npm ci --no-audit`, so it did not produce npm's vulnerability report. A follow-up workflow change is being proposed to run `npm audit --json`, retain its exit code, and upload the raw JSON/stderr as a 30-day artifact. Until that run completes and its artifact is inspected, this report does not state a finding count or severity distribution. The required report must include:
 
 - Exact commit SHA and lockfile blob/commit reference.
 - Node.js and npm versions.
@@ -135,7 +134,7 @@ Do not automatically upgrade Expo/React Native packages solely to silence an adv
 
 ## 7. Decision and release gate
 
-**Decision for this documentation review: HOLD on declaring the dependency security audit complete.** The committed lockfile synchronization is verified, but the detailed npm audit evidence is missing and the workflow hardening proposal remains pending.
+**Decision: HOLD on closing Phase 1E.** Lockfile synchronization and PR #83 workflow hardening are verified, but a complete `npm audit --json` report and the final same-candidate quality-gate evidence are still pending.
 
 Before closing Phase 1E:
 
@@ -144,7 +143,10 @@ Before closing Phase 1E:
 - [ ] Confirm the Expo SDK compatibility matrix after any proposed dependency change.
 - [ ] Require `npm ci` against the committed lockfile.
 - [ ] Require tests, typecheck, Expo compatibility, Android export, Prebuild, and debug APK build to pass on the same candidate commit.
-- [ ] Review and resolve PR #83; confirm least-privilege workflow permissions on `main`.
+- [x] Review and merge PR #83; confirm least-privilege workflow permissions on `main`.
+- [ ] Run and inspect the `npm audit --json` artifact from the candidate commit.
+- [ ] Record npm vulnerability counts by severity and a disposition for each advisory.
+- [ ] Confirm all quality gates pass on the same candidate commit.
 - [ ] Record CI run URLs, job results, artifact identity, and candidate commit SHA.
 - [ ] Keep debug APK testing separate from production AAB signing, release approval, and store submission.
 - [ ] Obtain required security, legal, operational, and Syariah approvals before any production release or real transaction enablement.
@@ -154,5 +156,6 @@ Before closing Phase 1E:
 - [PR #82 — synchronize Expo dependency lockfile](https://github.com/muchlisbstg/export-client-mobile-sync/pull/82)
 - [PR #82 merge commit](https://github.com/muchlisbstg/export-client-mobile-sync/commit/9db00cd3e02e606b1fe4f3edfce739504f963cfb)
 - [PR #83 — make Android preview workflow read-only](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83)
+- [PR #84 — Phase 1E documentation](https://github.com/muchlisbstg/export-client-mobile-sync/pull/84)
 - [Android Preview workflow on main](https://github.com/muchlisbstg/export-client-mobile-sync/blob/main/.github/workflows/android-preview-apk.yml)
 - [Mobile build and release readiness](./mobile-build-and-release.md)
