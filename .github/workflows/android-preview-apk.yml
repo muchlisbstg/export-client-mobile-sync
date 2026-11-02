@@ -60,6 +60,14 @@ jobs:
           set -e
           printf '%s\n' "$audit_exit_code" > npm-audit-exit-code.txt
           {
+            printf 'workflow_commit=%s\n' "$(git rev-parse HEAD)"
+            printf 'node_version=%s\n' "$(node --version)"
+            printf 'npm_version=%s\n' "$(npm --version)"
+            printf 'package_json_sha256=%s\n' "$(sha256sum package.json | cut -d' ' -f1)"
+            printf 'package_lock_sha256=%s\n' "$(sha256sum package-lock.json | cut -d' ' -f1)"
+            printf 'audit_timestamp_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > npm-audit-metadata.txt
+          {
             echo '## npm audit'
             echo "- Workflow candidate SHA: `$(git rev-parse HEAD)`"
             echo "- package.json SHA-256: `$(sha256sum package.json | cut -d' ' -f1)`"
@@ -77,6 +85,7 @@ jobs:
             npm-audit.json
             npm-audit.stderr.txt
             npm-audit-exit-code.txt
+            npm-audit-metadata.txt
           if-no-files-found: error
           retention-days: 30
       - name: Run application tests
