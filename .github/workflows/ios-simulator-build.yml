@@ -22,8 +22,8 @@ concurrency:
 jobs:
   simulator-build:
     name: Build unsigned iOS Simulator app
-    runs-on: macos-15
-    timeout-minutes: 45
+    runs-on: macos-26
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          WORKSPACE="$(find ios -maxdepth 2 -name '*.xcworkspace' -print -quit)"
+          WORKSPACE="$(find ios -maxdepth 2 -name '*.xcworkspace' ! -path '*/Pods/*' -print -quit)"
           test -n "$WORKSPACE"
           xcodebuild \
             -workspace "$WORKSPACE" \
