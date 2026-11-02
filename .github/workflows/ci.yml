@@ -51,7 +51,7 @@ jobs:
           npm ci
           lockfile_sha_after=$(sha256sum package-lock.json | cut -d' ' -f1)
           test "$lockfile_sha_before" = "$lockfile_sha_after"
-          printf 'package_lock_sha256=%s\\n' "$lockfile_sha_after" >> "$GITHUB_STEP_SUMMARY"
+          printf 'package_lock_sha256=%s\n' "$lockfile_sha_after" >> "$GITHUB_STEP_SUMMARY"
       - name: Install desktop dependencies
         run: npm ci
         working-directory: .ci/desktop
@@ -80,7 +80,7 @@ jobs:
           npm ci
           lockfile_sha_after=$(sha256sum package-lock.json | cut -d' ' -f1)
           test "$lockfile_sha_before" = "$lockfile_sha_after"
-          printf 'package_lock_sha256=%s\\n' "$lockfile_sha_after" >> "$GITHUB_STEP_SUMMARY"
+          printf 'package_lock_sha256=%s\n' "$lockfile_sha_after" >> "$GITHUB_STEP_SUMMARY"
       - name: Test API client
         run: npm test
       - name: Typecheck
