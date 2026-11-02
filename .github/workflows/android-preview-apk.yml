@@ -3,15 +3,6 @@ name: Android Preview APK
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "app.json"
-      - "app.config.*"
-      - "package.json"
-      - "package-lock.json"
-      - "src/**"
-      - "App.*"
-      - "assets/**"
-      - ".github/workflows/android-preview-apk.yml"
 
 permissions:
   contents: read
