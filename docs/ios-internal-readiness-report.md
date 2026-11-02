@@ -37,7 +37,7 @@ The first Xcode compile failed because the macOS 15 runner selected Xcode 16.4 /
 Follow-up PR #91 changes the simulator-only runner to `macos-26`, increases the timeout, and excludes the Pods workspace when locating the application workspace. This is a toolchain/CI correction; no JavaScript dependencies or lockfiles were changed.
 
 - Follow-up simulator workflow run #2: `41374790396`.
-- Last observed status: in progress at CocoaPods installation; Xcode compilation and artifact upload had not yet completed.
+- Latest observed status: run #2 passed CocoaPods installation and is in progress at Xcode Simulator compilation; packaging and artifact upload have not yet completed.
 - Therefore simulator compilation is **not yet verified**.
 
 ## Dependency audit
