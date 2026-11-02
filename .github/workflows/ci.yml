@@ -43,6 +43,9 @@ jobs:
       - name: Install web dependencies
         run: npm ci
         working-directory: .ci/web
+      - name: Generate experimental mobile lockfile
+        run: npm install --package-lock-only --ignore-scripts
+        working-directory: .ci/mobile
       - name: Install mobile dependencies
         run: npm ci
         working-directory: .ci/mobile
@@ -67,6 +70,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Generate experimental lockfile
+        run: npm install --package-lock-only --ignore-scripts
       - name: Install dependencies
         run: npm ci
       - name: Test API client
@@ -77,3 +82,11 @@ jobs:
         run: npx expo install --check
       - name: Export Android JavaScript bundle
         run: npx expo export --platform android --output-dir /tmp/expo-export
+      - name: Upload generated experimental lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk58-override-lockfile-${{ github.sha }}
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 14
