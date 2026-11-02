@@ -674,15 +674,15 @@ Implementasi harus tetap mengikuti prinsip branch dan pull request terpisah, pen
 
 ## Phase 1E — Audit dependency dan lockfile
 
-**Status dokumentasi: sebagian terverifikasi; audit kerentanan npm belum ditutup.** Manifest Expo SDK 58 dan `package-lock.json` telah disinkronkan melalui PR [#82](https://github.com/muchlisbstg/export-client-mobile-sync/pull/82), yang merged pada commit `9db00cd3e02e606b1fe4f3edfce739504f963cfb`.
+**Status dokumentasi: audit terukur; remediasi dependency belum ditutup.** Manifest Expo SDK 58 dan `package-lock.json` telah disinkronkan melalui PR [#82](https://github.com/muchlisbstg/export-client-mobile-sync/pull/82), yang merged pada commit `9db00cd3e02e606b1fe4f3edfce739504f963cfb`.
 
 Temuan penting dari pemeriksaan workflow `main`:
 
 - `package-lock.json` sudah menjadi bagian dari source control.
-- Android Preview menjalankan `npm ci --no-audit`; job tersebut tidak menghasilkan laporan kerentanan npm.
-- Workflow `main` saat ini masih menggunakan `contents: write`, persisted checkout credentials, serta regenerasi dan push-back lockfile pada pull request.
-- PR [#83](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83) mengusulkan mode read-only dan validasi lockfile committed, tetapi masih berstatus draft/open pada saat dokumentasi ini diperbarui.
+- PR [#83](https://github.com/muchlisbstg/export-client-mobile-sync/pull/83) sudah merged: workflow menggunakan `contents: read`, `persist-credentials: false`, dan tidak lagi menulis lockfile ke branch.
+- Android Preview pada PR #83 berhasil; post-merge Mobile CI pada `main` juga lulus untuk `verify` dan `interoperability`.
+- Baseline workflow memakai `npm ci --no-audit`; laporan vulnerability masih perlu dihasilkan sebagai artifact audit tersendiri.
 
-Tidak ada jumlah atau tingkat kerentanan yang dinyatakan di sini karena laporan lengkap `npm audit --json` yang terikat pada commit dan lockfile tertentu belum ditemukan dalam bukti repository yang diperiksa. **Jangan menyimpulkan “bebas vulnerability” hanya dari keberhasilan `npm ci` atau build APK.**
+Audit `npm audit --json` telah dijalankan pada kandidat yang terikat ke SHA dan checksum lockfile: ditemukan **11 moderate**, 0 low, 0 high, dan 0 critical. Dua advisory dasarnya adalah GHSA-3g3m-2fjr-6pw4 (`glob`) dan GHSA-g3hv-75wg-m249 (`minimatch`). Laporan JSON dan metadata tersimpan sebagai artifact GitHub Actions. Remediasi belum disetujui; jangan jalankan `npm audit fix` secara massal karena saran untuk `expo` mengarah ke downgrade SDK mayor.
 
-Rincian manifest, provenance lockfile, kondisi workflow, bukti yang belum tersedia, format vulnerability register, dan checklist penutupan tersedia pada [Phase 1E — Dependency & Lockfile Audit](docs/phase-1e-dependency-lockfile-audit-2026-11-02.md).
+Rincian manifest, provenance lockfile, kondisi workflow, bukti audit yang belum tersedia, format vulnerability register, dan checklist penutupan tersedia pada [Phase 1E — Dependency & Lockfile Audit](docs/phase-1e-dependency-lockfile-audit-2026-11-02.md).
