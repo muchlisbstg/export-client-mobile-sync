@@ -3,26 +3,58 @@
 ## Scope and guardrails
 
 - Target: Supabase project `export-client-staging` (`utvxuzmtevnmrcpxfpaa`, PostgreSQL 17, `ap-south-1`).
-- Source system: server-hosted SQLite used by `server/index.mjs`; physical runtime host and resolved `API_DB_PATH` are not yet verified.
-- Initial staging data strategy: **both** (synthetic test fixtures plus a controlled, reviewed import from the server SQLite source).
+- Source system: SQLite is created by `server/index.mjs`; physical runtime host and resolved `API_DB_PATH` are not verified. No VPS or dedicated backend host has been identified or hired.
+- Initial staging data strategy: **both** (synthetic test fixtures plus a controlled, reviewed import from a verified SQLite source).
 - Production is read-only for this work. Do not run schema changes, writes, exports that alter source state, cutover, or deployment against production.
 - Do not merge this branch, change `main`, or deploy production. User performs review and merge manually.
 - Do not copy personal/customer data into staging until a data classification, minimization, masking, and explicit staging-import approval are complete.
 
 ## Evidence snapshot (2026-11-03)
 
-- Repository: `muchlisbstg/export-client-mobile-sync`; base commit: `0358bfa664e26ad3ff872c805da606651e99330e`.
-- `package.json` includes `better-sqlite3` and `dev:api = node server/index.mjs`.
+- Repository: `muchlisbstg/export-client-mobile-sync`; preparation branch is based on `0358bfa664e26ad3ff872c805da606651e99330e`.
+- `package.json` includes `better-sqlite3`, `express` 5, and `dev:api = node server/index.mjs`; no `engines` field is declared.
 - `server/index.mjs` creates SQLite at `options.dbPath ?? process.env.API_DB_PATH ?? server/data/api.sqlite`; enables WAL and foreign keys.
-- `server/authorization.mjs` requires a better-sqlite3-compatible handle. Current auth/enterprise membership and supply-chain routes therefore depend on SQLite-shaped database APIs.
-- The Vercel project `export-client-mobile-sync` has no environment variables returned by the environment inventory, and its project metadata identifies a frontend deployment. This does not identify the host running the Node API or prove where its SQLite file resides.
-- Supabase staging project is `ACTIVE_HEALTHY`, PostgreSQL 17.11. No application tables were returned for `public`/ `private`; migration history is empty.
-- A read-only SQL probe connected as `postgres`. This is evidence about the staging connector session, not the intended least-privilege runtime role.
-- No migration or data import has been executed.
+- The API defaults to `127.0.0.1:4001` and reads `API_PORT`, not the conventional hosting `PORT`. A public web service requires a deliberate bind/port adjustment (e.g. host `0.0.0.0` and honor the platform-provided `PORT`).
+- The API startup creates catalog/inquiry/sync tables in SQLite. The tenant and supply-chain schema is applied separately by `scripts/migrate-tenant-isolation.mjs` / `scripts/migrate-supply-chain.mjs`; it is not proof that a deployed SQLite file has those migrations.
+- `server/authorization.mjs`, `server/supply-chain.mjs`, and `server/supply-chain-routes.mjs` call better-sqlite3-specific methods (`prepare`, `transaction`, `pragma`, SQLite metadata). A PostgreSQL driver cannot be substituted without a repository/service refactor.
+- The Vercel project `export-client-mobile-sync` is the frontend deployment. Its environment inventory did not identify a backend service or `API_DB_PATH`; this does not prove where a local SQLite file may exist.
+- No dedicated VPS/backend host is currently known. The only known database project is Supabase staging.
+- Supabase staging project is `ACTIVE_HEALTHY`, PostgreSQL 17.11. Read-only table inventory for `public` and `private` returned no application tables; migration history is empty.
+- A read-only SQL probe connected as `postgres`. This is evidence about the connector session, not the intended least-privilege runtime role.
+- No staging schema DDL, application data import, or deployment has been executed.
+
+## Hosting decision for staging
+
+**Recommended: Render Free Web Service for the first Node.js staging API**, with Supabase PostgreSQL remaining the only staging database.
+
+Rationale and trade-offs:
+- Render supports a conventional Node.js web service, matching the current Express server model with less refactoring than a serverless-only host.
+- Free web services spin down after 15 minutes without inbound traffic and take about a minute to wake. They have ephemeral filesystems; local SQLite files are lost on restart, redeploy, or spin-down.
+- Free web services do not provide SSH/shell access, persistent disks, or always-on behavior. Therefore Render Free is suitable only after the API uses Supabase PostgreSQL; it is not suitable as the authoritative home for SQLite.
+- Render's free Postgres expires after 30 days and has no backups. Do not create it for this project; use the already-provisioned Supabase staging PostgreSQL.
+- Render may suspend a Free service if it initiates unusually high outbound traffic, including external database/API traffic. Monitor usage and verify this during staging tests.
+- Vercel Functions are a viable alternative only after adapting the Express API to request-scoped serverless handlers and removing assumptions about a long-running process/timer. Current peer-sync timers and the conventional HTTP listener make Render the lower-change initial option.
+
+Before creating the Render service:
+1. Complete PostgreSQL repository adapter and remove runtime dependence on local SQLite for the staging service.
+2. Change the server listener to honor the platform `PORT` and bind externally (for example, `0.0.0.0`) without changing local-development defaults unexpectedly.
+3. Add health/readiness behavior and ensure sync workers do not depend on an in-process timer that can be lost during sleep/restart; use durable outbox processing with restart-safe scheduling.
+4. Connect the GitHub repository to a new Render service using the Render dashboard. No Render account/service is currently connected or created by this task.
+
+Source: [Render free service limitations](https://render.com/docs/free), [Vercel Node.js Function limitations](https://vercel.com/docs/functions/limitations).
+
+## PostgreSQL connection contract
+
+- Supabase staging project reference: `utvxuzmtevnmrcpxfpaa`; project URL: `https://utvxuzmtevnmrcpxfpaa.supabase.co`; region `ap-south-1`; PostgreSQL 17.11.
+- Store the Supabase connection string as a server-side secret named `DATABASE_URL` in the hosting provider. Obtain the exact URI from Supabase Dashboard → Connect; choose the Session Pooler connection if the selected host's IPv4/network compatibility requires it. Do not synthesize the pooler hostname or paste the URI/password into chat or source control.
+- Use a dedicated least-privilege runtime database role, not `postgres` and not the Supabase `service_role` API key.
+- Keep Supabase Auth URL and publishable/anon key separate from the database connection URI. Server-only secrets must never be prefixed with `EXPO_PUBLIC_` or embedded in the mobile/web bundle.
+- Expected staging environment contract (names only; values set in the hosting dashboard): `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SINGLE_ENTERPRISE_ID`, `WEB_ORIGINS`, and any approved peer-sync secrets. `API_HOST` / `PORT` handling must be updated before hosting.
+- Connection preparation is documentation-only. No database password, API key, or runtime role credential was created, retrieved, or changed.
 
 ## Source discovery gate (must pass before extraction)
 
-On the actual API host, using an authorized read-only shell/session:
+The repository default `server/data/api.sqlite` is only a fallback path, not proof that a physical database exists or is authoritative. First establish where the API is actually run (Termux/local workstation, CI, or hosted runtime). On that exact machine, using an authorized read-only shell/session:
 
 1. Identify the process/service, deployment revision, working directory, and service manager.
 2. Inspect the effective environment **without printing secret values**; record whether `API_DB_PATH` is set and resolve the final absolute path.
@@ -32,10 +64,12 @@ On the actual API host, using an authorized read-only shell/session:
 6. Produce a source inventory and SHA-256 manifest for the approved snapshot. Keep the source untouched.
 7. Classify personal, customer, commercial, and evidence data. Define masking/minimization before any staging import. Staging receives synthetic fixtures plus only the specifically approved, sanitized source subset.
 
-If the API host or effective database path cannot be verified, stop and report the missing evidence; do not infer a path from the repository default.
+If the host or effective database path cannot be verified, stop and report the missing evidence; do not infer a path from the repository default.
 
 ## Migration architecture
 
+- A draft schema baseline is in [`postgres-schema-draft.sql`](./postgres-schema-draft.sql). It was authored from repository DDL sources, not from a live SQLite snapshot, and has **not** been applied or PostgreSQL-executed.
+- Treat the draft as a review artifact, not a release migration. Reconcile it against the live SQLite `sqlite_master` / PRAGMA inventory before generating the final versioned migration.
 - Introduce a PostgreSQL repository adapter behind the existing API/service contract. Keep the SQLite adapter available during the transition; avoid a broad rewrite in the first migration PR.
 - Port authorization and supply-chain persistence in isolated follow-up slices. Existing authorization and supply-chain modules directly call SQLite APIs, so changing only the API bootstrap is insufficient.
 - Preserve identifiers as text initially where the existing domain uses slugs or mixed formats. Avoid bulk UUID conversion.
@@ -45,7 +79,8 @@ If the API host or effective database path cannot be verified, stop and report t
 - Preserve timestamps with an explicit UTC interpretation; do not silently reinterpret timezone-naive values.
 - Preserve unique constraints, foreign keys, idempotency keys, transactional boundaries, audit history, and both outbox flows (`sync_outbox`, `tenant_sync_outbox`).
 - Keep API response/request contracts stable for Expo Web and mobile clients.
-- Use versioned SQL migrations committed in this branch. Do not apply DDL to staging until the migration SQL and security model have been reviewed and explicitly approved.
+- The draft places tables in non-exposed `app_private` and enables/forces RLS without permissive policies. This intentionally denies ordinary runtime access until reviewed enterprise/site policies and grants are added. Do not weaken this deny-by-default posture just to make tests pass.
+- Do not apply DDL to staging until the schema draft, security model, and runtime role have been reviewed and explicitly approved.
 
 ## Initial logical inventory to reconcile against live SQLite
 
@@ -94,8 +129,8 @@ Reconcile every table, column, index, trigger, foreign key, default, check const
 
 ## Delivery slices
 
-1. **This branch / preparation:** document evidence, source discovery, schema mapping rules, migration runbook, and acceptance gates.
-2. **PostgreSQL schema PR:** versioned DDL and constraints after live SQLite inventory review.
+1. **This branch / preparation:** evidence, source discovery, schema mapping rules, draft SQL, migration runbook, and acceptance gates.
+2. **PostgreSQL schema PR:** final versioned DDL after live SQLite inventory review and schema/security review.
 3. **Repository adapter PR:** catalog/inquiry and sync persistence, preserving API contract.
 4. **Authorization/RLS PR:** trusted role mapping, enterprise/site policy tests, least-privilege runtime role.
 5. **Supply-chain PostgreSQL PR:** isolated port of supply-chain persistence and transactional invariants.
