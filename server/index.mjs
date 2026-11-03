@@ -280,18 +280,12 @@ export function createServer(options = {}) {
     return res.json({ ok: true, user: res.locals.authIdentity });
   });
 
+  // Public liveness endpoint: do not disclose node identity, peer topology,
+  // synchronization configuration, queue depth, retry state, or conflict counts.
   app.get("/health", (_req, res) => {
     db.prepare("SELECT 1").get();
-    const pendingDeliveries = db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get().count;
-    const retryingDeliveries = db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE last_error IS NOT NULL").get().count;
-    const conflicts = db.prepare("SELECT COUNT(*) AS count FROM sync_conflicts").get().count;
     res.setHeader("Cache-Control", "no-store");
-    res.json({
-      status: "ok",
-      nodeId,
-      syncEnabled,
-      syncStatus: { enabled: syncEnabled, peerCount: peers.length, pendingDeliveries, retryingDeliveries, conflicts },
-    });
+    return res.json({ status: "ok" });
   });
 
 
