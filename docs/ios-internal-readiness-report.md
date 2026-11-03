@@ -71,3 +71,25 @@ The corrected iOS Simulator workflow compiled, packaged, and uploaded an unsigne
 ## Distribution policy
 
 Do not create signing credentials, enroll in Apple Developer Program, produce a signed IPA, or submit to TestFlight until external distribution is explicitly approved. A successful unsigned Simulator build is an internal engineering milestone, not a production release.
+
+
+## 4. Artifact binary inspection — 3 November 2026
+
+The previously uploaded artifact was downloaded from workflow run `41375101452` (artifact ID `13111610100`) and inspected as an archive on a non-macOS host.
+
+- Downloaded artifact filename: `ios-simulator-app.zip`
+- Outer artifact ZIP SHA-256: `647901dfa20fab8b40fe7ba48cc1324a9fd29569be68a261f751c2c1207f189f`
+- Nested app ZIP SHA-256: `ce1e7e88ad7358ea5335ccb0d147201c0e702a57b628e1e39a5f504c21a82493`
+- Archive contains `ExportClient.app`.
+- `Info.plist` bundle identifier: `com.muchlisbstg.exportclient`
+- Display name: `Export Client`
+- Bundle version: `1`; short version: `0.1.0`
+- Minimum OS version: `16.4`
+- SDK: `iphonesimulator26.5`; Xcode build metadata: `17F113`
+- Device family metadata: iPhone and iPad.
+- Main executable is a Mach-O universal binary with `arm64` and `x86_64` simulator architectures.
+- The archive extraction and plist/Mach-O metadata inspection completed successfully.
+
+**Limitations:** this inspection verifies archive integrity and app bundle metadata, not successful app launch. The inspection host is not macOS and has no Apple CoreSimulator runtime; no simulator boot, app installation, UI smoke test, backend login, or network workflow was performed. The bundle identifier is metadata only and does not prove Apple Developer registration or signing ownership.
+
+**Updated readiness:** BUILD AND ARTIFACT CONTENT VERIFIED — SIMULATOR LAUNCH / UI ACCEPTANCE PENDING.
