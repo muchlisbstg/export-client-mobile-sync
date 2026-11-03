@@ -20,7 +20,7 @@ import { filterOutComparedProducts } from "./src/catalog-compare";
 import { formatCatalogCsv } from "./src/catalog-csv";
 
 
-async function shareContent(content: { title?: string; message?: string }) {
+async function shareContent(content: Parameters<typeof Share.share>[0]) {
   if (Platform.OS !== "web") return Share.share(content);
 
   const webNavigator = globalThis.navigator as unknown as {
