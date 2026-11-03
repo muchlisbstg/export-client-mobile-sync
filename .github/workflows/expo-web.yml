@@ -1,0 +1,46 @@
+name: Expo Web Build
+
+on:
+  push:
+    branches: [feat/expo-web]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies from committed lockfile
+        shell: bash
+        run: |
+          lockfile_sha_before=$(sha256sum package-lock.json | cut -d' ' -f1)
+          npm ci
+          lockfile_sha_after=$(sha256sum package-lock.json | cut -d' ' -f1)
+          test "$lockfile_sha_before" = "$lockfile_sha_after"
+          printf 'package_lock_sha256=%s\\n' "$lockfile_sha_after" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate Expo SDK dependencies
+        run: npx expo install --check
+      - name: Run tests
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Export static Web build
+        run: npm run export:web
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-web-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

@@ -19,6 +19,26 @@ import { formatCatalogShare } from "./src/catalog-share";
 import { filterOutComparedProducts } from "./src/catalog-compare";
 import { formatCatalogCsv } from "./src/catalog-csv";
 
+
+async function shareContent(content: Parameters<typeof Share.share>[0]) {
+  if (Platform.OS !== "web") return Share.share(content);
+
+  const webNavigator = globalThis.navigator as unknown as {
+    share?: (data: { title?: string; text?: string }) => Promise<void>;
+    clipboard?: { writeText: (text: string) => Promise<void> };
+  };
+  const message = content.message ?? "";
+
+  if (typeof webNavigator.share === "function") {
+    await webNavigator.share({ title: content.title, text: message });
+    return { action: Share.sharedAction };
+  }
+  if (webNavigator.clipboard?.writeText) {
+    await webNavigator.clipboard.writeText(message);
+    return { action: Share.sharedAction };
+  }
+  throw new Error("Browser tidak menyediakan fitur berbagi atau clipboard.");
+}
 const comparisonFieldLabels: Record<ComparisonField, string> = { category: "Kategori", origin: "Asal", unit: "Satuan" };
 const colors = { ink: "#17352c", green: "#194b3c", sage: "#78904a", muted: "#748078", line: "#dfe5de", paper: "#f6f7f3", white: "#ffffff", lime: "#c9d96d", danger: "#a33131" };
 
@@ -214,7 +234,7 @@ export default function App() {
 
   async function shareCatalogResults() {
     try {
-      const result = await Share.share({
+      const result = await shareContent({
         title: "Katalog ekspor",
         message: formatCatalogShare(visibleProducts, {
           query: catalogQuery,
@@ -235,7 +255,7 @@ export default function App() {
     try {
       const csv = formatCatalogCsv(visibleProducts);
       if (!csv) throw new Error("Tidak ada hasil katalog untuk dibagikan.");
-      const result = await Share.share({ title: "Katalog produk CSV", message: csv });
+      const result = await shareContent({ title: "Katalog produk CSV", message: csv });
       if (result.action === Share.sharedAction) setCatalogCsvNotice("CSV katalog siap dibagikan.");
     } catch (caught) {
       setCatalogCsvNotice(caught instanceof Error ? caught.message : "CSV katalog tidak dapat dibagikan.");
@@ -244,7 +264,7 @@ export default function App() {
 
   async function shareComparison() {
     try {
-      const result = await Share.share({
+      const result = await shareContent({
         title: "Perbandingan produk",
         message: formatComparisonShare(comparedProducts, visibleComparisonFields, differingComparisonFields),
       });
@@ -258,7 +278,7 @@ export default function App() {
     try {
       const csv = formatComparisonCsv(comparedProducts, visibleComparisonFields);
       if (!csv) throw new Error("Pilih setidaknya dua produk untuk membagikan CSV perbandingan.");
-      const result = await Share.share({ title: "Perbandingan produk CSV", message: csv });
+      const result = await shareContent({ title: "Perbandingan produk CSV", message: csv });
       if (result.action === Share.sharedAction) setComparisonCsvNotice("CSV perbandingan siap dibagikan.");
     } catch (caught) {
       setComparisonCsvNotice(caught instanceof Error ? caught.message : "CSV perbandingan tidak dapat dibagikan.");
@@ -268,7 +288,7 @@ export default function App() {
   async function shareTrackingCode() {
     setTrackingCodeNotice("");
     try {
-      const result = await Share.share({
+      const result = await shareContent({
         title: "Kode pelacakan permintaan",
         message: `Kode pelacakan: ${trackingCode}`,
       });
