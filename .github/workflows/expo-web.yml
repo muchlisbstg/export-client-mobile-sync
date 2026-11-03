@@ -1,0 +1,44 @@
+name: Expo Web Build
+
+on:
+  push:
+    branches: [feat/expo-web]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.1
+          cache: npm
+      - name: Resolve and validate SDK 58 lockfile
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          node -e "const fs=require('node:fs'); console.log('LOCKFILE_BASE64_BEGIN'); console.log(fs.readFileSync('package-lock.json').toString('base64')); console.log('LOCKFILE_BASE64_END')"
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Validate Expo SDK dependencies
+        run: npx expo install --check
+      - name: Run tests
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Export static Web build
+        run: npm run export:web
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-web-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

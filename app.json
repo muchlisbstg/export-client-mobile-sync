@@ -13,6 +13,10 @@
     },
     "android": {
       "package": "com.muchlisbstg.exportclient"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
     }
   }
 }
