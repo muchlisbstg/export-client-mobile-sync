@@ -21,7 +21,7 @@ import { formatCatalogCsv } from "./src/catalog-csv";
 
 
 async function shareContent(content: { title?: string; message?: string }) {
-  if (Platform.OS !== "web") return shareContent(content);
+  if (Platform.OS !== "web") return Share.share(content);
 
   const webNavigator = globalThis.navigator as unknown as {
     share?: (data: { title?: string; text?: string }) => Promise<void>;
