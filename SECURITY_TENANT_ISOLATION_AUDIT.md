@@ -46,7 +46,7 @@ The presence of authorization modules and passing CI does not prove every route,
 | `POST /api/v1/inquiries` | Public RFQ creation with rate limiter | Validate abuse protection, consent, retention, and data minimization |
 | `GET /api/v1/inquiries/:trackingCode` | Public tracking with format validation and rate limiter | Tracking code is a bearer capability; keep response minimal and prevent enumeration |
 | `POST /api/v1/sync/inquiries` | Shared-secret protected; disabled if secret is absent | Service-to-service authentication only; validate peer identity, replay, idempotency, and network TLS |
-| `GET /health` | Public | Current response includes operational node/sync/queue/conflict metadata; review and minimize public disclosure |
+| `GET /health` | Public minimal liveness/readiness | PR #102 now returns only `{status: "ok"}` after a database `SELECT 1`, with `Cache-Control: no-store`; no node, peer, queue, retry, or conflict metadata is returned |
 
 The retired multi-enterprise tenant-sync endpoint returns HTTP 410. This is consistent with the single-enterprise direction.
 
@@ -72,7 +72,7 @@ The code still uses `tenants`, `tenant_memberships`, `enterprise_role_assignment
 
 ### P0 — Public endpoint exposure
 
-- Review the public `/health` response. It currently exposes node identity and sync/queue/conflict counters; return only minimal liveness information publicly or restrict detailed diagnostics to operator access.
+- **Addressed in PR #102 (merged as `acb4524a579c2cdf96aa44d9820645665290cf2f`):** public `/health` now returns only minimal status after a database `SELECT 1`, with `Cache-Control: no-store`. Keep detailed peer/queue/conflict diagnostics on an authenticated operator-only channel; do not reintroduce them publicly.
 - Review public inquiry creation for schema validation, abuse controls, consent/privacy notice, retention, and rate limiting behind the actual proxy.
 - Keep tracking responses minimal, use `Cache-Control: no-store`, and test high-volume enumeration resistance.
 
