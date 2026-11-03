@@ -1,83 +1,126 @@
 # iOS Internal Readiness Report
 
-## Scope and decision
+**Review date:** 3 November 2026  
+**Repository:** `muchlisbstg/export-client-mobile-sync`  
+**Reviewed main SHA:** `d4a267489986a4f4e2aab2c2e4a4ae3ddd24456e`
 
-- Distribution target: internal development and simulator testing only.
-- Apple Developer Program: not required for unsigned iOS Simulator builds; enrollment and TestFlight are deferred.
-- Expo SDK: preserve `~58.0.22`; no downgrade.
-- Candidate bundle identifier: `com.muchlisbstg.exportclient` (not yet registered or verified for ownership).
-- Build target: unsigned iOS Simulator application; not an IPA for physical iPhones.
+## Scope and distribution decision
 
-## Repository evidence
+- Target remains internal development and iOS Simulator validation.
+- The workflow builds an unsigned Simulator `.app`; it is not an IPA and is not installable on a physical iPhone.
+- Apple Developer signing, TestFlight, and App Store distribution remain out of scope.
+- Preserve Expo SDK `~58.0.22`; no SDK downgrade is authorized.
+- Candidate bundle identifier `com.muchlisbstg.exportclient` is not evidence of registered ownership or a verified signing identity.
 
-- Main merge commit for PR #90: `2c87dc14108784c49eca7343772392949bd93106`.
-- Follow-up simulator toolchain branch: `fix/ios-simulator-swift-6-2`.
-- Follow-up PR: #91 (Draft; manual review/merge required).
-- Follow-up commit: `2cbfb4ce394a266a57918df3b78c2e5a5e1f09ae`.
+## Repository and PR evidence
 
-PR #90 was merged on GitHub at 2026-11-02T01:50:09Z. This report does not attribute that merge to automation by this assistant.
+- PR #90 established the initial iOS Simulator workflow.
+- PR #91, `ci(ios): build simulator with Swift 6.2 toolchain`, was merged on 2 November 2026 at `2026-11-02T02:01:23Z`.
+- PR #91 head SHA: `9d8de92786b2b8295dd00c240e8fe7102ac8f969`.
+- PR #91 merge commit: `1afcf59a5140a5a544361ae010330ed34aa3e8cb`.
+- The change moved the simulator-only job to a Swift 6.2-capable macOS runner, increased the timeout, and avoided selecting the Pods workspace. It did not change JavaScript dependencies or the lockfile.
 
-## CI and native build
+## Latest verified GitHub Actions evidence
 
-### Verified
+The following runs were queried for the PR #91 head SHA `9d8de92786b2b8295dd00c240e8fe7102ac8f969`:
 
-- Mobile CI run #598 (`41374790410`): `verify` and `interoperability` jobs completed successfully.
-- Test suite: 89 passed, 0 failed.
-- TypeScript typecheck: passed.
-- Expo SDK dependency compatibility check: passed.
-- Android JavaScript export: passed.
-- Three-backend interoperability (web/mobile/desktop): passed.
-- iOS Prebuild Validation run #3 (`41374259904`): passed.
-- In the first iOS Simulator attempt (`41374259980`), `npm ci`, Expo compatibility, iOS prebuild, and CocoaPods installation passed.
+| Workflow | Run ID | Result |
+|---|---:|---|
+| Mobile CI | `41375101450` | Success |
+| Android Preview APK | `41375101529` | Success |
+| iOS Simulator Build | `41375101452` | Success |
 
-### Failed first simulator compilation
+The iOS job, **Build unsigned iOS Simulator app**, completed successfully through dependency installation, Expo compatibility validation, native project generation, CocoaPods installation, Xcode Simulator compilation, app packaging, and artifact upload.
 
-The first Xcode compile failed because the macOS 15 runner selected Xcode 16.4 / Swift 6.1, while a resolved Apple Swift package declares Swift tools version 6.2.0.
+### iOS Simulator artifact
 
-Follow-up PR #91 changes the simulator-only runner to `macos-26`, increases the timeout, and excludes the Pods workspace when locating the application workspace. This is a toolchain/CI correction; no JavaScript dependencies or lockfiles were changed.
+- Artifact: `ios-simulator-51bc3c95c62d626cbd31745240b7ead89d0f6d1c`
+- Artifact ID: `13111610100`
+- Size: 32,590,971 bytes
+- Expiration: `2026-11-09T02:06:06Z`
+- [Workflow run and artifact](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41375101452)
 
-- Follow-up simulator workflow run #2: `41374790396`.
-- Latest observed status: run #2 passed CocoaPods installation and is in progress at Xcode Simulator compilation; packaging and artifact upload have not yet completed.
-- Therefore simulator compilation is **not yet verified**.
+**Evidence boundary:** GitHub reports that the artifact was uploaded. The artifact binary has not been downloaded and inspected in this review. Bundle identifier, app version, architecture, and launch behavior are therefore not independently certified here.
 
-## Dependency audit
-
-The captured npm audit artifact reports:
-
-- 531 dependency nodes.
-- 11 moderate vulnerabilities.
-- 0 high vulnerabilities.
-- 0 critical vulnerabilities.
-- Main advisories include glob `GHSA-3g3m-2fjr-6pw4` and minimatch `GHSA-g3hv-75wg-m249`.
-
-The audit's broad automatic remediation path proposes Expo 53.0.11, which would downgrade the project from Expo SDK 58. That remediation is rejected by project policy. No downgrade or unverified override was applied. The dependency findings remain open for a compatible, separately tested remediation.
-
-## Functional test evidence
+## Functional validation status
 
 | Area | Automated evidence | Actual iOS UI / live environment |
 |---|---|---|
-| Login | Backend auth tests cover missing/invalid tokens, provider outage, verified identity, and admin authorization; enterprise role authorization tests pass. | Not yet exercised end-to-end in iOS Simulator; requires configured Supabase test environment and test account. |
-| Catalog | API contract tests cover catalog retrieval; catalog filtering, sorting, comparison, CSV and share helpers are in the 89-test suite. | Not yet manually exercised in iOS Simulator. Current product list is demo data. |
-| Inquiry | Client tests cover POST payload and tracking; server tests cover create, persistence, validation and tracking. | Not yet submitted through the running iOS app against a dedicated test backend. |
-| Synchronization | Server tests cover sync authentication, disabled-by-default behavior, persistent outbox retry after restart, three-node forwarding, duplicate echo suppression; web/mobile/desktop interoperability CI passes. | Not yet verified from the iOS app against live peer nodes. App UI currently displays local peer-sync status and supports refresh; it does not itself expose a manual sync operation. |
+| Authentication | Backend auth and enterprise authorization tests are included in the repository test suite. | Not yet exercised end-to-end in the Simulator with a dedicated Supabase staging account. |
+| Catalog | API and catalog helper tests are included. | Not yet manually exercised in the Simulator against a controlled backend. |
+| Inquiry | Client/server tests cover request and tracking behavior. | Not yet submitted and tracked through the running iOS app against a dedicated test API. |
+| Supply-chain operations | Supply-chain service and route tests are included. | Not yet validated through the iOS UI against a configured staging environment. |
+| Peer synchronization | Mobile/web/desktop interoperability CI has passed. | Live iOS-to-peer replication, retry, and conflict behavior remain unverified. |
 
 ## Readiness decision
 
-**Status: NOT READY for end-to-end iOS acceptance yet.**
+**Status: BUILD VERIFIED — END-TO-END ACCEPTANCE PENDING.**
 
-The code-level test and interoperability gates are green. The native prebuild is green. The first simulator compile failed due to a Swift toolchain mismatch, and the corrected macOS 26 simulator build remains pending.
+The corrected iOS Simulator workflow compiled, packaged, and uploaded an unsigned app artifact. This closes the previous Swift toolchain build blocker. It does not establish that the app has been launched, that backend connectivity works, or that the business workflows pass in the Simulator.
 
-### Remaining gates
+### Remaining acceptance gates
 
-1. Confirm PR #91 simulator workflow completes Xcode compilation and uploads the `.app` artifact.
-2. Inspect the artifact and verify bundle ID, build version, simulator architecture, and absence of signing requirements.
-3. Launch the app in an iOS Simulator and perform UI smoke tests.
-4. Run login using a dedicated Supabase test account.
-5. Load catalog from a controlled test backend.
-6. Submit and track a non-production inquiry.
-7. Configure two or more test peer nodes and verify replication, retry, and conflict visibility.
-8. Record screenshots, logs, test data identifiers, and exact commit SHA.
+1. Download and inspect the exact artifact while it is still available; record its SHA-256 and verify app metadata.
+2. Launch it in a compatible iOS Simulator and capture a successful startup screenshot and logs.
+3. Configure a dedicated Supabase staging identity and test API origin; do not use production credentials.
+4. Exercise login, catalog loading, inquiry submission, and tracking against synthetic staging data.
+5. Exercise supply-chain screens and role-denied cases using test identities.
+6. Configure at least two test peer nodes and verify replication, retry, duplicate suppression, and conflict visibility.
+7. Record screenshots, redacted logs, synthetic test identifiers, exact artifact ID, workflow run, and source SHA.
 
 ## Distribution policy
 
-Do not enroll in Apple Developer Program, create signing credentials, build a signed IPA, or submit to TestFlight until external distribution is explicitly required. Internal simulator validation remains the current target.
+Do not create signing credentials, enroll in Apple Developer Program, produce a signed IPA, or submit to TestFlight until external distribution is explicitly approved. A successful unsigned Simulator build is an internal engineering milestone, not a production release.
+
+
+## 4. Artifact binary inspection — 3 November 2026
+
+The previously uploaded artifact was downloaded from workflow run `41375101452` (artifact ID `13111610100`) and inspected as an archive on a non-macOS host.
+
+- Downloaded artifact filename: `ios-simulator-app.zip`
+- Outer artifact ZIP SHA-256: `647901dfa20fab8b40fe7ba48cc1324a9fd29569be68a261f751c2c1207f189f`
+- Nested app ZIP SHA-256: `ce1e7e88ad7358ea5335ccb0d147201c0e702a57b628e1e39a5f504c21a82493`
+- Archive contains `ExportClient.app`.
+- `Info.plist` bundle identifier: `com.muchlisbstg.exportclient`
+- Display name: `Export Client`
+- Bundle version: `1`; short version: `0.1.0`
+- Minimum OS version: `16.4`
+- SDK: `iphonesimulator26.5`; Xcode build metadata: `17F113`
+- Device family metadata: iPhone and iPad.
+- Main executable is a Mach-O universal binary with `arm64` and `x86_64` simulator architectures.
+- The archive extraction and plist/Mach-O metadata inspection completed successfully.
+
+**Limitations:** this inspection verifies archive integrity and app bundle metadata, not successful app launch. The inspection host is not macOS and has no Apple CoreSimulator runtime; no simulator boot, app installation, UI smoke test, backend login, or network workflow was performed. The bundle identifier is metadata only and does not prove Apple Developer registration or signing ownership.
+
+**Updated readiness:** BUILD AND ARTIFACT CONTENT VERIFIED — SIMULATOR LAUNCH / UI ACCEPTANCE PENDING.
+
+
+## 5. Latest app-source-aligned Simulator artifact — 3 November 2026
+
+A newer successful iOS Simulator Build was found and inspected. This artifact supersedes the earlier PR #91 artifact noted in section 4.
+
+- Workflow run: [41561807155 — iOS Simulator Build](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41561807155)
+- Workflow branch: `feat/expo-web`
+- Workflow source SHA: `fae534ae0c1fe6c1dce6d6a8a5c602fa67436dbe`
+- Artifact ID: `13197298030`
+- Artifact name: `ios-simulator-a2128bcfee31cea4bb4bbefeeedccf87ddf9d4e2`
+- Artifact size: 32,588,863 bytes
+- Expiration: `2026-11-10T01:59:27Z`
+- Downloaded outer artifact ZIP SHA-256: `a20a0468c7c554d2120513e135278b6b1badbe9395ffc26b057a095b48c1a817`
+- Nested app ZIP SHA-256: `74974b1ca9e072e1cc14a1969c953806bfa7358bec3d17a12d370bec241bdd21`
+
+The nested archive contains `ExportClient.app`. Inspected metadata:
+
+| Property | Value |
+|---|---|
+| Bundle identifier | `com.muchlisbstg.exportclient` |
+| Display name | `Export Client` |
+| Version | `0.1.0` (build `1`) |
+| Minimum iOS | `16.4` |
+| SDK | `iphonesimulator26.5` |
+| Xcode build | `17F113` |
+| Architectures | `arm64`, `x86_64` |
+
+The repository comparison from `fae534ae0c1fe6c1dce6d6a8a5c602fa67436dbe` to reviewed `main` SHA `d4a267489986a4f4e2aab2c2e4a4ae3ddd24456e` shows only AWS runner workflow/infra and staging documentation files changed; no application source, `App.tsx`, `app.json`, or dependency manifest/lockfile changed in that range. This supports using the inspected artifact as the latest app-source-aligned Simulator build for the reviewed main tree.
+
+**Still not performed:** booting an Apple Simulator, installing and launching the app, UI smoke tests, and live staging API workflows. The current inspection environment is not macOS and has no CoreSimulator runtime. Artifact integrity and metadata inspection are not substitutes for runtime acceptance.
