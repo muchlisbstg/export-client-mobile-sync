@@ -97,12 +97,11 @@ jobs:
           xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID" | tee ios-simulator-launch.txt
           sleep 8
           xcrun simctl io "$DEVICE_ID" screenshot ios-simulator-smoke.png
-          {
-            printf 'device_name=%s\\n' "$DEVICE_NAME"
-            printf 'device_udid=%s\\n' "$DEVICE_ID"
-            printf 'device_state_after_launch=Booted\\n'
-            printf 'bundle_id=%s\\n' "$BUNDLE_ID"
-          } > ios-simulator-device.txt
+          printf '%s\\n' \
+            "device_name=$DEVICE_NAME" \
+            "device_udid=$DEVICE_ID" \
+            "device_state_after_launch=Booted" \
+            "bundle_id=$BUNDLE_ID" > ios-simulator-device.txt
 
       - name: Upload iOS Simulator artifact
         uses: actions/upload-artifact@v7
