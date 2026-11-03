@@ -1,106 +1,95 @@
-# Staging PostgreSQL Migration Plan
+# Staging PostgreSQL Preparation Plan
 
-## Scope and guardrails
+## Scope and binding decisions
 
 - Target: Supabase project `export-client-staging` (`utvxuzmtevnmrcpxfpaa`, PostgreSQL 17, `ap-south-1`).
-- Source system: server-hosted SQLite used by `server/index.mjs`; physical runtime host and resolved `API_DB_PATH` are not yet verified.
-- Initial staging data strategy: **both** (synthetic test fixtures plus a controlled, reviewed import from the server SQLite source).
-- Production is read-only for this work. Do not run schema changes, writes, exports that alter source state, cutover, or deployment against production.
-- Do not merge this branch, change `main`, or deploy production. User performs review and merge manually.
-- Do not copy personal/customer data into staging until a data classification, minimization, masking, and explicit staging-import approval are complete.
+- Staging data policy: **synthetic fixtures only**, and only after the actual source schema has been reconciled and the fixture design reviewed.
+- Operational/customer/commercial records must not be exported, copied, sanitized for transfer, or imported into staging under the current authorization.
+- Production remains read-only. No production DDL, writes, exports, cutover, or deployment.
+- Infrastructure budget is not yet available. Do not provision paid Hostinger VPS, AWS, or other live infrastructure. Use existing GitHub workflows and the already available Supabase staging project where safe.
+- User reviews and merges PRs manually. Do not merge, deploy, or apply infrastructure automatically.
 
 ## Evidence snapshot (2026-11-03)
 
-- Repository: `muchlisbstg/export-client-mobile-sync`; base commit: `0358bfa664e26ad3ff872c805da606651e99330e`.
+- Repository: `muchlisbstg/export-client-mobile-sync`.
 - `package.json` includes `better-sqlite3` and `dev:api = node server/index.mjs`.
-- `server/index.mjs` creates SQLite at `options.dbPath ?? process.env.API_DB_PATH ?? server/data/api.sqlite`; enables WAL and foreign keys.
-- `server/authorization.mjs` requires a better-sqlite3-compatible handle. Current auth/enterprise membership and supply-chain routes therefore depend on SQLite-shaped database APIs.
-- The Vercel project `export-client-mobile-sync` has no environment variables returned by the environment inventory, and its project metadata identifies a frontend deployment. This does not identify the host running the Node API or prove where its SQLite file resides.
-- Supabase staging project is `ACTIVE_HEALTHY`, PostgreSQL 17.11. No application tables were returned for `public`/ `private`; migration history is empty.
-- A read-only SQL probe connected as `postgres`. This is evidence about the staging connector session, not the intended least-privilege runtime role.
-- No migration or data import has been executed.
+- `server/index.mjs` resolves the database as `options.dbPath ?? process.env.API_DB_PATH ?? server/data/api.sqlite`, enables WAL, and enables foreign keys.
+- The repository's `main` branch contains application bootstrap/schema creation code, but source-code DDL is not a substitute for the physical SQLite schema.
+- A prior local Termux audit of `server/data/api.sqlite` reported 21 tables, 10 triggers, 51 total rows, WAL journal mode, `integrity_check=ok`, and an empty `foreign_key_check`. At the time of that audit, the WAL file was 0 bytes and the SHM file was 32 KiB.
+- **Source boundary:** the local Termux database audit does not prove that this file is the database used by the currently deployed API service. The physical API runtime host and effective `API_DB_PATH` remain unverified.
+- Supabase staging was previously observed as `ACTIVE_HEALTHY`, PostgreSQL 17.11, with no application tables and empty migration history. Re-check immediately before any staging DDL.
+- No migration or data import is authorized or recorded as completed.
 
-## Source discovery gate (must pass before extraction)
+## Source schema discovery gate
 
-On the actual API host, using an authorized read-only shell/session:
+The schema-only baseline must come from an authorized, consistent read of the actual SQLite source selected by the application owner. Before treating any artifact as authoritative:
 
-1. Identify the process/service, deployment revision, working directory, and service manager.
-2. Inspect the effective environment **without printing secret values**; record whether `API_DB_PATH` is set and resolve the final absolute path.
-3. Verify the file exists and record file size, modification time, owner, permissions, and filesystem/mount characteristics. Do not upload the file or copy it yet.
-4. Inspect SQLite metadata read-only: `PRAGMA database_list`, `PRAGMA journal_mode`, `PRAGMA foreign_keys`, `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, table names, schema DDL, row counts, and min/max timestamps where available.
-5. Account for WAL state. Use SQLite's online backup API or a coordinated filesystem-consistent snapshot only after the source owner approves the read operation; never copy only the main database file while a live WAL database is changing.
-6. Produce a source inventory and SHA-256 manifest for the approved snapshot. Keep the source untouched.
-7. Classify personal, customer, commercial, and evidence data. Define masking/minimization before any staging import. Staging receives synthetic fixtures plus only the specifically approved, sanitized source subset.
+1. Identify the API process/service, deployment revision, working directory, and service manager.
+2. Inspect effective environment variable names without printing secret values; determine whether `API_DB_PATH` is set and resolve the final absolute path.
+3. Verify the source file identity and metadata. Do not infer the deployed database path from the repository default or from a local Termux copy.
+4. Read SQLite metadata without changing the source: `PRAGMA database_list`, `journal_mode`, `foreign_keys`, `integrity_check`, `foreign_key_check`, table DDL, indexes, triggers, and constraints.
+5. Account for WAL consistency. Do not copy only the main database file from a live WAL database.
+6. Produce a schema-only artifact named `api-schema-only.sql` plus non-sensitive provenance metadata (source identity, extraction timestamp, SQLite version, schema/user versions, table/trigger/index counts, and SHA-256).
+7. Exclude all row contents, sample values, credentials, customer identifiers, and operational records from the artifact and metadata.
+8. Reconcile the artifact against the expected application domains and record every mismatch before drafting PostgreSQL DDL.
 
-If the API host or effective database path cannot be verified, stop and report the missing evidence; do not infer a path from the repository default.
+If the actual API host/path or snapshot consistency cannot be verified, stop. A local database snapshot or source-code DDL must not be represented as the deployed API schema.
 
-## Migration architecture
+## Schema reconciliation requirements
 
-- Introduce a PostgreSQL repository adapter behind the existing API/service contract. Keep the SQLite adapter available during the transition; avoid a broad rewrite in the first migration PR.
-- Port authorization and supply-chain persistence in isolated follow-up slices. Existing authorization and supply-chain modules directly call SQLite APIs, so changing only the API bootstrap is insufficient.
-- Preserve identifiers as text initially where the existing domain uses slugs or mixed formats. Avoid bulk UUID conversion.
-- Preserve inventory quantities as integer milli-units (`bigint`), never floating-point stock.
-- Use `numeric` for financial values where exact decimal semantics are required; validate all legacy REAL fields before mapping.
-- Convert validated JSON text to `jsonb`; retain original text or quarantine malformed rows for explicit remediation.
-- Preserve timestamps with an explicit UTC interpretation; do not silently reinterpret timezone-naive values.
-- Preserve unique constraints, foreign keys, idempotency keys, transactional boundaries, audit history, and both outbox flows (`sync_outbox`, `tenant_sync_outbox`).
-- Keep API response/request contracts stable for Expo Web and mobile clients.
-- Use versioned SQL migrations committed in this branch. Do not apply DDL to staging until the migration SQL and security model have been reviewed and explicitly approved.
+- Reconcile all tables and columns, declared types, nullability, defaults, primary keys, unique constraints, foreign keys, CHECK constraints, indexes, and triggers.
+- Account for SQLite-specific behavior such as `AUTOINCREMENT`, affinity, collations, partial indexes, expression indexes, trigger ordering, and timestamp/text conventions.
+- Preserve identifiers as text where the domain uses slugs or mixed formats; do not bulk-convert identifiers to UUID.
+- Preserve inventory quantities as integer milli-units (`bigint`) in PostgreSQL; never use floating-point stock.
+- Use `numeric` for financial values where exact decimal semantics are required.
+- Validate JSON text before mapping to `jsonb`; document malformed or ambiguous schema/data semantics without exporting their values.
+- Preserve transactional boundaries, idempotency keys, audit history, and outbox semantics.
+- Keep API request/response contracts stable for Expo Web and mobile clients.
+- The logical table inventory in application code is a discovery aid only; it is not evidence that each table exists in the physical SQLite database.
 
-## Initial logical inventory to reconcile against live SQLite
+## Supabase security model — design only until approval
 
-Expected domains from the current codebase (not a substitute for inspecting live SQLite DDL):
-
-- Catalog and inquiry: `products`, `inquiries`.
-- Peer sync: `sync_outbox`, `sync_conflicts`, `tenant_sync_outbox`.
-- Enterprise and access: `tenants`, `tenant_memberships`, `enterprise_role_assignments`, `enterprise_role_audit`, `commercial_transactions`.
-- Supply chain: `supply_sites`, `supply_lots`, `lot_genealogy`, `inventory_movements`, `inventory_entries`, `processing_losses`, `quality_inspections`, `handovers`, `supply_evidence`, `supply_site_assignments`, `supply_audit_events`.
-
-Reconcile every table, column, index, trigger, foreign key, default, check constraint, and row count against the actual server database before generating the final PostgreSQL schema. This list is a planning inventory, not a claim that all tables currently exist in the live SQLite file.
-
-## Supabase security model
-
-- Decide explicitly whether business tables belong in an unexposed schema or an exposed schema. Do not assume newly created `public` tables are automatically reachable through the Data API.
-- Enable RLS on every exposed business table. Policies must scope by trusted enterprise membership and, where applicable, assigned site.
-- Never use user-editable `user_metadata` for authorization. Roles come from trusted server-side membership/assignment records.
+- Decide whether business tables belong in an unexposed schema or an exposed schema.
+- Enable RLS on every exposed business table.
+- Scope policies by trusted enterprise membership and assigned site where applicable.
+- Never use user-editable `user_metadata` for authorization.
 - For UPDATE policies, include both `USING` and `WITH CHECK`.
-- Default functions to `SECURITY INVOKER`; any required definer function needs a separate threat-model review, non-exposed placement, restricted EXECUTE grants, and advisor verification.
-- Do not put service-role keys, database passwords, or privileged credentials in browser/mobile bundles.
-- The runtime database role must be least-privilege. Do not use the `postgres` or service-role credential for ordinary application requests.
-- Validate transaction-scoped identity context and prove it cannot be spoofed or leaked across pooled connections before relying on it for RLS.
+- Default functions to `SECURITY INVOKER`; review any required definer function separately.
+- Do not place service-role keys, database passwords, or privileged credentials in browser/mobile bundles.
+- Use a least-privilege runtime role; do not use the `postgres` or service-role credential for ordinary application requests.
+- Validate identity context and connection-pool isolation before relying on it for RLS.
+- No staging DDL is applied until the schema, grants, RLS policies, and negative tests are reviewed and explicitly approved.
 
-## Data migration and reconciliation
+## Synthetic fixture policy
 
-1. Create an approved, consistent SQLite snapshot; retain original unchanged.
-2. Export to versioned, checksummed, access-controlled staging files.
-3. Load synthetic fixtures first and verify constraints and API behavior.
-4. Import the approved sanitized source subset in dependency order inside repeatable transactions.
-5. Compare per-table row counts, primary-key sets, checksums for stable fields, FK orphans, nullability, enum/status distributions, and timestamps.
-6. Reconcile inventory balances from posted ledger entries and compare to SQLite-derived balances.
-7. Reconcile outbox pending/retry/conflict states and ensure idempotent replay does not duplicate records.
-8. Record rejected/quarantined rows with reason codes; do not silently drop or coerce them.
+1. Complete schema-only extraction and reconciliation first.
+2. Design fixtures from the reconciled schema; use wholly fabricated identities, organizations, products, lots, quantities, documents, and timestamps.
+3. Do not derive fixture values from operational records or use production rows as templates.
+4. Keep fixtures deterministic, minimal, and clearly labeled as synthetic.
+5. Test constraints, transaction boundaries, role isolation, inventory invariants, outbox idempotency, and API contracts.
+6. Record fixture version and test outcomes; never include secrets or real personal/commercial data.
 
 ## Staging validation gates
 
-- Schema: migrations apply cleanly; expected constraints/indexes; no unexpected public Data API exposure.
-- Integrity: no FK orphans; all checks pass; inventory balance and processing-loss reconciliation.
-- Security: unauthenticated denial, role matrix, enterprise/site isolation, cross-tenant denial, RLS negative tests, no privileged secrets in client assets.
-- API: login/session, catalog, inquiry create, tracking, and stable response contracts.
-- Supply chain: intake → QC hold/release → processing/genealogy → stock transfer → dispatch/receipt/discrepancy → evidence and audit.
+- Schema: versioned migration matches the approved schema baseline; expected constraints/indexes/triggers are tested.
+- Integrity: no FK orphans; all checks pass; inventory balance and processing-loss invariants hold for synthetic fixtures.
+- Security: unauthenticated denial, role matrix, enterprise/site isolation, cross-tenant denial, RLS negative tests, and no privileged secrets in client assets.
+- API: login/session, catalog, synthetic inquiry creation, tracking, and stable response contracts.
+- Supply chain: intake → QC hold/release → processing/genealogy → stock transfer → dispatch/receipt/discrepancy → evidence and audit, all using synthetic fixtures.
 - Sync: at least two peer nodes; retry/backoff, duplicate replay, conflict handling, and outbox recovery after process restart.
-- Resilience: transaction rollback, interrupted import restart, backup/restore rehearsal, and staging recovery.
-- Web: browser smoke test, CORS, responsive layout, Web Share/clipboard, console and network errors.
-- Performance: query plans and indexes for measured critical paths; no speculative indexing without workload evidence.
+- Resilience: transaction rollback and backup/restore rehearsal using staging-only synthetic data.
+- Web/mobile: browser smoke tests, CORS, responsive layout, console/network errors, and Android/iOS build evidence.
+- Performance: query plans and indexes for measured critical paths; no speculative indexing.
 
 ## Delivery slices
 
-1. **This branch / preparation:** document evidence, source discovery, schema mapping rules, migration runbook, and acceptance gates.
-2. **PostgreSQL schema PR:** versioned DDL and constraints after live SQLite inventory review.
-3. **Repository adapter PR:** catalog/inquiry and sync persistence, preserving API contract.
-4. **Authorization/RLS PR:** trusted role mapping, enterprise/site policy tests, least-privilege runtime role.
-5. **Supply-chain PostgreSQL PR:** isolated port of supply-chain persistence and transactional invariants.
-6. **Staging import and cutover PR:** only after data approval, repeatable import, reconciliation, rollback plan, and staging-only deployment approval.
+1. **Schema baseline PR:** only `api-schema-only.sql` and non-sensitive provenance metadata; no database file or row data.
+2. **Reconciliation report:** table/column/index/trigger/constraint comparison and unresolved differences.
+3. **PostgreSQL schema PR:** versioned DDL only after schema reconciliation and security review.
+4. **Repository adapter PRs:** isolated catalog/inquiry/sync, authorization, and supply-chain slices while preserving API contracts.
+5. **Synthetic staging validation:** apply only to the dedicated Supabase staging project after explicit approval; no operational import.
+6. **Live infrastructure:** Hostinger VPS selection and provisioning remain deferred until a budget is approved. AWS draft infrastructure is not the selected provider.
 
 ## Explicit stop conditions
 
-Stop before any write if source host/path is unverified, snapshot consistency is uncertain, row mapping is ambiguous, PII masking is undefined, RLS negative tests fail, or the intended runtime role requires bypassing RLS. Production remains untouched throughout.
+Stop before any write if the actual source host/path is unverified, snapshot consistency is uncertain, schema mapping is ambiguous, RLS negative tests fail, or the intended runtime role requires bypassing RLS. Never export or import operational data under this plan. Production remains untouched throughout.
