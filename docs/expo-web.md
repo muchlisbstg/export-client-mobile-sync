@@ -8,7 +8,7 @@ npm run web
 npm run export:web
 ```
 
-The static export is written to `dist/`.
+The single-page application export is written to `dist/`. The project does not use Expo Router, so `web.output` is set to `single` rather than route-prerendered `static` output.
 
 ## Runtime configuration
 
@@ -21,6 +21,10 @@ Supabase public URL and anon key may be exposed to the browser only when protect
 ## Sharing behavior
 
 Native builds continue to use React Native `Share.share`. Web uses the Web Share API when available and falls back to the Clipboard API. Browser permissions and secure-context requirements apply.
+
+## Hosting note
+
+Because this is a single-page application, configure the static host to rewrite application routes to `index.html` if client-side routes are added later.
 
 ## Release gate
 
