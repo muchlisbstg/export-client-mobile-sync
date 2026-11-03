@@ -66,11 +66,13 @@ test("HTTP IPv6 loopback peers are accepted for local development", () => {
 
 test("health, catalog, create and tracking match the shared API contract", async () => {
   const { base } = await boot();
-  const health = await (await fetch(`${base}/health`)).json();
-  assert.deepEqual(health, {
-    status: "ok", nodeId: "mobile-off", syncEnabled: false,
-    syncStatus: { enabled: false, peerCount: 0, pendingDeliveries: 0, retryingDeliveries: 0, conflicts: 0 },
-  });
+  const healthResponse = await fetch(`${base}/health`);
+  const health = await healthResponse.json();
+  assert.equal(healthResponse.headers.get("cache-control"), "no-store");
+  assert.deepEqual(health, { status: "ok" });
+  for (const field of ["nodeId", "syncEnabled", "syncStatus", "peerCount", "pendingDeliveries", "retryingDeliveries", "conflicts"]) {
+    assert.equal(Object.hasOwn(health, field), false, `public health must not expose ${field}`);
+  }
   const catalog = await (await fetch(`${base}/api/v1/products`)).json();
   assert.deepEqual(catalog.data.map((product) => product.id), ["cocoa-beans", "green-coffee", "dried-spices"]);
   const createdResponse = await fetch(`${base}/api/v1/inquiries`, {
@@ -171,10 +173,10 @@ test("persistent outbox resumes sync after the peer returns and the node restart
   assert(sourceRecord);
   const failedAttempt = await waitForOutboxState(firstSource.db, sourceRecord.id, peerNodeId, (row) => row?.attemptCount >= 1, "a persisted failed attempt");
   assert.ok(failedAttempt.attemptCount >= 1);
-  const pendingStatus = await (await fetch(`${firstBase}/health`)).json();
-  assert.deepEqual(pendingStatus.syncStatus, { enabled: true, peerCount: 1, pendingDeliveries: 1, retryingDeliveries: 1, conflicts: 0 });
-  assert.equal("peerUrl" in pendingStatus.syncStatus, false);
-  assert.equal("lastError" in pendingStatus.syncStatus, false);
+  const pendingDeliveries = firstSource.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get().count;
+  const retryingDeliveries = firstSource.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE last_error IS NOT NULL").get().count;
+  assert.equal(pendingDeliveries, 1);
+  assert.equal(retryingDeliveries, 1);
 
   await firstSource.close();
   services.splice(services.indexOf(firstSource), 1);
@@ -185,8 +187,8 @@ test("persistent outbox resumes sync after the peer returns and the node restart
   const replicated = await waitForTracking(target.base, created.trackingCode);
   assert.equal(replicated.data.productName, "Kopi Arabika hijau");
   await waitForOutboxState(restartedSource.db, sourceRecord.id, peerNodeId, (row) => !row, "successful delivery and outbox removal");
-  const recoveredStatus = await (await fetch(`${firstBase}/health`)).json();
-  assert.equal(recoveredStatus.syncStatus.pendingDeliveries, 0);
+  const recoveredPending = restartedSource.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get().count;
+  assert.equal(recoveredPending, 0);
 });
 
 test("three-node sync forwards inquiries transitively and stops duplicate echoes", async () => {
@@ -284,9 +286,10 @@ test("peer replication is idempotent and conflicts never overwrite stored data",
   assert.equal(collision.reason, "tracking_code_collision");
   assert.equal(nodeB.service.db.prepare("SELECT customer_name FROM inquiries WHERE id=?").get(record.id).customer_name, "Peer Client");
   assert.equal(nodeB.service.db.prepare("SELECT COUNT(*) AS count FROM sync_conflicts WHERE inquiry_id=?").get(record.id).count, 1);
-  const syncStatus = await (await fetch(`${nodeB.base}/health`)).json();
-  assert.equal(syncStatus.syncStatus.conflicts, 2);
-  assert.equal(syncStatus.syncStatus.pendingDeliveries, 0);
+  const syncConflictCount = nodeB.service.db.prepare("SELECT COUNT(*) AS count FROM sync_conflicts").get().count;
+  const syncPendingCount = nodeB.service.db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get().count;
+  assert.equal(syncConflictCount, 2);
+  assert.equal(syncPendingCount, 0);
 });
 
 
