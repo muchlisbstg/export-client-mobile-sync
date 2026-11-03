@@ -93,3 +93,34 @@ The previously uploaded artifact was downloaded from workflow run `41375101452` 
 **Limitations:** this inspection verifies archive integrity and app bundle metadata, not successful app launch. The inspection host is not macOS and has no Apple CoreSimulator runtime; no simulator boot, app installation, UI smoke test, backend login, or network workflow was performed. The bundle identifier is metadata only and does not prove Apple Developer registration or signing ownership.
 
 **Updated readiness:** BUILD AND ARTIFACT CONTENT VERIFIED — SIMULATOR LAUNCH / UI ACCEPTANCE PENDING.
+
+
+## 5. Latest app-source-aligned Simulator artifact — 3 November 2026
+
+A newer successful iOS Simulator Build was found and inspected. This artifact supersedes the earlier PR #91 artifact noted in section 4.
+
+- Workflow run: [41561807155 — iOS Simulator Build](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41561807155)
+- Workflow branch: `feat/expo-web`
+- Workflow source SHA: `fae534ae0c1fe6c1dce6d6a8a5c602fa67436dbe`
+- Artifact ID: `13197298030`
+- Artifact name: `ios-simulator-a2128bcfee31cea4bb4bbefeeedccf87ddf9d4e2`
+- Artifact size: 32,588,863 bytes
+- Expiration: `2026-11-10T01:59:27Z`
+- Downloaded outer artifact ZIP SHA-256: `a20a0468c7c554d2120513e135278b6b1badbe9395ffc26b057a095b48c1a817`
+- Nested app ZIP SHA-256: `74974b1ca9e072e1cc14a1969c953806bfa7358bec3d17a12d370bec241bdd21`
+
+The nested archive contains `ExportClient.app`. Inspected metadata:
+
+| Property | Value |
+|---|---|
+| Bundle identifier | `com.muchlisbstg.exportclient` |
+| Display name | `Export Client` |
+| Version | `0.1.0` (build `1`) |
+| Minimum iOS | `16.4` |
+| SDK | `iphonesimulator26.5` |
+| Xcode build | `17F113` |
+| Architectures | `arm64`, `x86_64` |
+
+The repository comparison from `fae534ae0c1fe6c1dce6d6a8a5c602fa67436dbe` to reviewed `main` SHA `d4a267489986a4f4e2aab2c2e4a4ae3ddd24456e` shows only AWS runner workflow/infra and staging documentation files changed; no application source, `App.tsx`, `app.json`, or dependency manifest/lockfile changed in that range. This supports using the inspected artifact as the latest app-source-aligned Simulator build for the reviewed main tree.
+
+**Still not performed:** booting an Apple Simulator, installing and launching the app, UI smoke tests, and live staging API workflows. The current inspection environment is not macOS and has no CoreSimulator runtime. Artifact integrity and metadata inspection are not substitutes for runtime acceptance.
