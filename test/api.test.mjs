@@ -12,6 +12,11 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+test("getHealth accepts the minimal public liveness contract", async () => {
+  const client = createApiClient(apiBaseUrl, async () => jsonResponse({ status: "ok" }));
+  assert.deepEqual(await client.getHealth(), { status: "ok" });
+});
+
 test("getProducts requests the shared catalog and returns its data", async () => {
   let requestedUrl;
   const client = createApiClient(apiBaseUrl, async (url) => {
