@@ -1,6 +1,15 @@
 name: P0 Schema Reconciliation Contract
 
 on:
+  push:
+    branches: ["release-readiness/**"]
+    paths:
+      - "scripts/inspect-transaction-authorization-schema.mjs"
+      - "scripts/migrate-tenant-isolation.mjs"
+      - "server/supply-chain.mjs"
+      - "test/schema-reconciliation-contract.test.mjs"
+      - "docs/database/source-schema-reconciliation.md"
+      - ".github/workflows/p0-schema-reconciliation.yml"
   pull_request:
     branches: [main]
     paths:
