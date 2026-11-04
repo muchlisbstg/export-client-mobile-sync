@@ -154,3 +154,32 @@ test("P0 two-site transfer requires authorization for both source and destinatio
     await app.close();
   }
 });
+
+test("P0 site assignment grant requires an active enterprise member and a site-compatible active role", async () => {
+  const app = await fixture();
+  try {
+    const nonMember = await request(app, "admin", "POST", "/api/v1/supply/sites/supplier-site/assignments", { userId: "not-an-enterprise-member" });
+    assert.equal(nonMember.status, 400);
+    assert.deepEqual(await nonMember.json(), { error: "user_not_active_enterprise_member" });
+
+    const noRole = await request(app, "admin", "POST", "/api/v1/supply/sites/supplier-site/assignments", { userId: users.noRole });
+    assert.equal(noRole.status, 400);
+    assert.deepEqual(await noRole.json(), { error: "user_role_incompatible_with_site" });
+
+    const suspended = await request(app, "admin", "POST", "/api/v1/supply/sites/supplier-site/assignments", { userId: users.suspended });
+    assert.equal(suspended.status, 400);
+    assert.deepEqual(await suspended.json(), { error: "user_not_active_enterprise_member" });
+
+    const incompatibleRole = await request(app, "admin", "POST", "/api/v1/supply/sites/supplier-site/assignments", { userId: users.buyer });
+    assert.equal(incompatibleRole.status, 400);
+    assert.deepEqual(await incompatibleRole.json(), { error: "user_role_incompatible_with_site" });
+
+    const valid = await request(app, "admin", "POST", "/api/v1/supply/sites/supplier-site/assignments", { userId: users.supplier });
+    assert.equal(valid.status, 201);
+    assert.deepEqual((await valid.json()).data, {
+      tenantId: "ent-1", userId: users.supplier, siteId: "supplier-site", status: "active",
+    });
+  } finally {
+    await app.close();
+  }
+});
