@@ -71,7 +71,7 @@ New branch remediation and route-level coverage:
 **Evidence:** Previous handler checked that the site was active and the caller was enterprise_admin, but only checked that target `userId` was non-empty. It did not validate target enterprise membership or active compatible role.  
 **Impact:** Could create stale or unusable site assignments for arbitrary user IDs or users without the corresponding enterprise role. This is an authorization-integrity gap; do not describe it as confirmed privilege escalation.  
 **Remediation:** Added active membership and compatible active role checks before insert/upsert.  
-**Verification:** Synthetic negative/positive cases are committed. GitHub Actions run `41782702554` completed `npm test` with 110 tests passed, 0 failed. The handover/evidence/site-lifecycle suite passed as subtest 63.
+**Verification:** Synthetic negative/positive cases are committed. GitHub Actions run `41782909995` completed `npm test` with 110 tests passed, 0 failed. The handover/evidence/site-lifecycle suite passed as subtest 63, including both source and destination checks during preparation.
 
 ### SEC-P0-HEALTH-CONTRACT-02 — Public health contract mismatch
 
@@ -112,7 +112,7 @@ New branch remediation and route-level coverage:
 | Cross-site handover source/destination | Passed: preparation checks both sites; dispatch checks source; receipt checks destination |
 | Handover evidence site scope | Passed: destination-only assignment cannot attach evidence to source-site handover |
 | Revoked assignment / deactivated site | Passed: both return 403 after lifecycle change |
-| GitHub CI test result | 110/110 tests passed, 0 failed on run [41782702554](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41782702554) |
+| GitHub CI test result | 110/110 tests passed, 0 failed on run [41782909995](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41782909995) |
 | Independent Security review | Pending; reviewer not appointed |
 | Database review / migration approval | Pending; no migration created or applied |
 | P0 closure | OPEN |
