@@ -4,7 +4,7 @@
 
 ## Baseline and guardrails
 
-- Repository baseline: `c74e29b0a8e3a12cb01d6dc3f9998d47012683b3`.
+- Repository baseline: `73e75edad71c5a6f8819e80c5ffdeabf32314c3d`.
 - Target Supabase project is not accessed by this branch.
 - Staging DDL, data, migration history, and settings are not changed.
 - No operational SQLite database is opened or copied. Tests use an in-memory synthetic database only.
