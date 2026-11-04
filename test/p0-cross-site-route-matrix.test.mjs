@@ -209,6 +209,16 @@ test("P0 handover and evidence enforce both site boundaries and active assignmen
     });
     const before = snapshot();
 
+    const sourceCannotPrepareHandoverWithoutDestinationAssignment = await call("source-only", "/api/v1/supply/handovers", "POST", {
+      lotId:lot.lotId,fromSiteId:source.id,toSiteId:destination.id,quantityMilli:100,unit:"kg",handoverCode:"HX-DENY-SOURCE",
+    });
+    assert.equal(sourceCannotPrepareHandoverWithoutDestinationAssignment.status, 403, "handover preparation must authorize the destination site");
+
+    const destinationCannotPrepareHandoverWithoutSourceAssignment = await call("destination-only", "/api/v1/supply/handovers", "POST", {
+      lotId:lot.lotId,fromSiteId:source.id,toSiteId:destination.id,quantityMilli:100,unit:"kg",handoverCode:"HX-DENY-DEST",
+    });
+    assert.equal(destinationCannotPrepareHandoverWithoutSourceAssignment.status, 403, "handover preparation must authorize the source site");
+
     const sourceCannotDispatchFromUnassignedSource = await call("destination-only", `/api/v1/supply/handovers/${handover.id}/dispatch`, "POST", {});
     assert.equal(sourceCannotDispatchFromUnassignedSource.status, 403, "destination-only user must not dispatch from source site");
 
