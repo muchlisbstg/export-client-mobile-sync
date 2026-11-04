@@ -9,6 +9,8 @@ on:
       - "package-lock.json"
       - "App.tsx"
       - "src/**"
+      - "server/**"
+      - "test/**"
       - ".github/workflows/ios-simulator-build.yml"
   workflow_dispatch:
 
