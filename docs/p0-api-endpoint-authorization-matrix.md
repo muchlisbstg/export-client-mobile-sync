@@ -1,6 +1,6 @@
 # P0 API endpoint authorization matrix
 
-**Baseline:** `cf773250492c669b3fe5da2bbc4f6f4d4c594f87`  
+**Baseline:** `73e75edad71c5a6f8819e80c5ffdeabf32314c3d`  
 **Inventory method:** static extraction from `server/index.mjs` and `server/supply-chain-routes.mjs`, cross-checked against middleware registration.  
 **Scope:** all 31 route registrations, 29 unique method/path pairs. The two transaction GET routes are registered in both modules; the earlier supply-chain registration handles the request.
 
@@ -53,3 +53,17 @@
 The inherited P0 test covers only nine protected route entries for absent/invalid/expired tokens, admin metadata spoofing, and allowlist success. Existing SEC-03 tests cover a subset of transaction assignments and projections. This matrix is the complete static inventory; it is **not** proof that every role/site/tenant negative case has been dynamically exercised.
 
 The follow-up CI test enumerates all 24 unique protected route pairs for missing and invalid credentials and separately asserts the public/retired contracts. Role/site/tenant combinations remain additional acceptance tests and require independent Security review before P0 closure.
+
+
+## CORS preflight contract (2026-11-04)
+
+CORS is an origin boundary for browser clients, not a substitute for API authentication or authorization.
+
+- Origins: exact values from `WEB_ORIGINS`; no wildcard and no credentialed cross-origin cookies.
+- Methods: `GET`, `POST`, `PATCH`, `DELETE`.
+- Request headers: `Authorization`, `Content-Type`, `Idempotency-Key`, `X-Active-Tenant-Id`, `X-Request-Id`, and `X-Sync-Peer`.
+- Preflight rejects unconfigured origins, methods outside the allowlist, and unapproved request headers.
+- Responses vary by Origin and, for preflight, by requested method and headers. Preflight cache max-age is 600 seconds.
+- Regression coverage: `test/p0-cors-preflight.test.mjs` checks allowed methods/headers and negative origin/method/header cases. The endpoint matrix also asserts the exact minimal `/health` body and `Cache-Control: no-store`.
+
+The CORS allowlist must be populated with the actual web origins per environment; a successful local preflight does not prove the production origin configuration.
