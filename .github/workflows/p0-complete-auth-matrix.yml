@@ -1,6 +1,17 @@
 name: P0 Complete Authorization Matrix
 
 on:
+  push:
+    branches: ["release-readiness/**"]
+    paths:
+      - "server/**"
+      - "test/p0-endpoint-auth-matrix.test.mjs"
+      - "test/p0-health-cors-contract.test.mjs"
+      - "test/p0-role-enterprise-site.test.mjs"
+      - "test/security-authorization-remediation.test.mjs"
+      - "test/transaction-authorization.test.mjs"
+      - "docs/security/endpoint-authorization-matrix.md"
+      - ".github/workflows/p0-complete-auth-matrix.yml"
   pull_request:
     branches: [main]
     paths:
