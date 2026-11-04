@@ -24,7 +24,7 @@ test("P0 CORS preflight permits only configured origins and supported API method
         headers: {
           Origin: "https://app.example.test",
           "Access-Control-Request-Method": method,
-          "Access-Control-Request-Headers": "authorization,content-type",
+          "Access-Control-Request-Headers": "authorization,content-type,idempotency-key,x-active-tenant-id,x-request-id",
         },
       });
       assert.equal(response.status, 204, `preflight for ${method} must succeed for configured origin`);
@@ -34,6 +34,9 @@ test("P0 CORS preflight permits only configured origins and supported API method
       const allowedHeaders = response.headers.get("access-control-allow-headers") ?? "";
       assert.match(allowedHeaders.toLowerCase(), /authorization/);
       assert.match(allowedHeaders.toLowerCase(), /content-type/);
+      assert.match(allowedHeaders.toLowerCase(), /idempotency-key/);
+      assert.match(allowedHeaders.toLowerCase(), /x-active-tenant-id/);
+      assert.match(allowedHeaders.toLowerCase(), /x-request-id/);
     }
 
     const denied = await fetch(base + "/api/v1/preflight-contract", {
