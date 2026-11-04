@@ -156,3 +156,53 @@ The matrix now has broad negative-role and representative site-boundary integrat
 7. Obtain independent Security Review against the exact SHA. CI success is supporting evidence only and does not close P0.
 
 No real customer data, staging database, migration, deployment, or paid infrastructure was used. No PR merge or release approval is implied by this evidence pack.
+
+
+## Independent Security Review packet
+
+**Review target (code and test changes):** `da4e64521ca39b533eff184dab43826670d0bd47`  
+**Branch:** `security/p0-release-readiness-2026-11-04`  
+**Draft PR:** [#119 — P0 route audit remediation and CORS contract](https://github.com/muchlisbstg/export-client-mobile-sync/pull/119)
+
+### CI evidence for the review target
+
+GitHub Actions run [41791223524](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41791223524) completed on the behavioral test source SHA:
+
+- `npm test`: **114 passed, 0 failed**.
+- `npm run typecheck`: success.
+- `npx expo install --check`: success.
+- Android JavaScript bundle export: success.
+- Three-backend interoperability job: success.
+
+This CI result is evidence for the tested commit only. It is not an independent security sign-off and does not establish every possible role/resource/site combination.
+
+### Reviewer checklist and required disposition
+
+The independent reviewer should inspect the source and test diffs at the exact review target and record:
+
+1. Whether the route inventory is complete against all route registrations.
+2. Whether every route's declared role policy matches business responsibilities and least privilege.
+3. Whether site constraints are enforced using verified tenant context and current active assignments.
+4. Whether two-site operations require authorization at both ends.
+5. Whether transaction access requires active assignment, correct transaction side, role, and linked active site.
+6. Whether denied requests are non-disclosing and leave business state unchanged.
+7. Whether audit persistence is fail-closed and append-only on every relevant mutation/read.
+8. Whether role, membership, site, and transaction-assignment revocation take effect immediately.
+9. Whether public endpoints disclose only their intended response contract.
+10. Whether browser CORS preflight and actual Web requests work with the headers and methods used by the client.
+
+**Reviewer identity:** to be supplied by the repository owner; no independent approval is asserted here.  
+**Review result:** PENDING.  
+**Findings:** reviewer to append with file/line references and severity.  
+**Approval SHA:** must be the exact reviewed commit, not a moving branch name.
+
+### Explicit closure blockers
+
+- The 114-test suite covers the implemented negative-role matrix, evidence entity-role matrix, representative site boundaries, and transaction assignment lifecycle. It does not constitute exhaustive positive-path coverage for every allowed role on every mutation/read route.
+- Audit-table write-failure injection is not yet exhaustive for every mutation.
+- Enterprise-role revocation is not yet independently tested against every route family.
+- Site revocation/inactivation and cross-site tests are representative, not a complete per-route Cartesian matrix.
+- Browser-level CORS E2E is still outstanding.
+- PR #119 was observed as Draft and GitHub reported `mergeable_state=dirty`; its base/head divergence must be reconciled before review can be completed on a clean PR diff.
+
+**Disposition: P0 SECURITY OPEN.** Do not merge, deploy, migrate, or approve release on the basis of this CI run.
