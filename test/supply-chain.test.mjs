@@ -205,6 +205,21 @@ test("single-enterprise RBAC restricts Buyer, Seller, Supplier, Warehouse, QC an
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:site.id,inspectionType:"receiving",result:"pass"}),
     });
     assert.equal(deniedInspection.status,403);
+    const noAuthInspection=await fetch(`${base}/api/v1/supply/lots/${lot.lotId}/inspections`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:site.id,inspectionType:"receiving",result:"pass"}),
+    });
+    assert.equal(noAuthInspection.status,401);
+
+    const mismatchedInspection=await request("token-qc",`/api/v1/supply/lots/${lot.lotId}/inspections`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:supplierSite.id,inspectionType:"receiving",result:"pass"}),
+    });
+    assert.equal(mismatchedInspection.status,403,"a QC assignment at another site must not authorize inspection of this lot");
+
+    const scopedSupplierStock=await request("token-warehouse",`/api/v1/supply/stock?siteId=${encodeURIComponent(supplierSite.id)}`);
+    assert.equal(scopedSupplierStock.status,200);
+    assert.equal((await scopedSupplierStock.json()).data.some(row=>row.lotId===lot.lotId),false,
+      "stock at a site must not disclose lots that have never had posted inventory at that site");
+
     const qcInspection=await request("token-qc",`/api/v1/supply/lots/${lot.lotId}/inspections`,{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({siteId:site.id,inspectionType:"receiving",result:"pass"}),
     });
