@@ -151,8 +151,8 @@ export function createServer(options = {}) {
     if (!allowedOrigins.includes(origin)) return res.status(403).json({ error: "origin_not_allowed" });
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-Id, X-Active-Tenant-Id");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     if (req.method === "OPTIONS") return res.sendStatus(204);
     return next();
   });
@@ -355,21 +355,8 @@ export function createServer(options = {}) {
   // Multi-enterprise tenant bundle replication is retired in the single-enterprise model.
   app.post("/api/v1/sync/tenants", (_req,res) => res.status(410).json({error:"multi_enterprise_sync_retired"}));
 
-  app.get("/api/v1/transactions", auth.authenticate, requireActiveTenant, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), (_req, res) => {
-    const tenant = res.locals.activeTenant;
-    const rows = db.prepare(`SELECT id, buyer_tenant_id AS buyerTenantId, seller_tenant_id AS sellerTenantId, inquiry_id AS inquiryId, status, created_at AS createdAt
-      FROM commercial_transactions WHERE buyer_tenant_id=? OR seller_tenant_id=? ORDER BY created_at DESC LIMIT 100`).all(tenant.id, tenant.id);
-    res.setHeader("Cache-Control", "no-store");
-    return res.json({ data: rows });
-  });
-  app.get("/api/v1/transactions/:id", auth.authenticate, requireActiveTenant, requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"), (req, res) => {
-    const tenant = res.locals.activeTenant;
-    const row = db.prepare(`SELECT id, buyer_tenant_id AS buyerTenantId, seller_tenant_id AS sellerTenantId, inquiry_id AS inquiryId, status, created_at AS createdAt
-      FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)`).get(req.params.id, tenant.id, tenant.id);
-    res.setHeader("Cache-Control", "no-store");
-    if (!row) return res.status(404).json({ error: "transaction_not_found" });
-    return res.json({ data: row });
-  });
+  // Transaction read routes are registered once in supply-chain-routes.mjs,
+  // where explicit transaction assignment and site-scope checks are enforced.
   // Legacy two-enterprise transaction writes are intentionally disabled. Buyer/Seller workflows
   // must be implemented as roles and orders within the configured single enterprise.
   app.post("/api/v1/transactions", auth.authenticate, requireActiveTenant, (_req,res) =>
