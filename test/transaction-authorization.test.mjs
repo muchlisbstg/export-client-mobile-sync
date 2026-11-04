@@ -24,7 +24,6 @@ test("SEC-03 transaction reads require explicit assignment, role and site scope;
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('buyer-side','buyer','Buyer Side',?)").run(now);
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('seller-side','seller','Seller Side',?)").run(now);
     db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES('buyer-side','user-buyer','buyer_member',?)").run(now);
-    db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES('enterprise-1','user-seller','seller_member',?)").run(now);
     db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES('tx-1','buyer-side','enterprise-1','pending',?)").run(now);
     db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES('tx-other','buyer-side','seller-side','pending',?)").run(now);
     const sites={supplier:["site-supplier","supplier","supplier_fulfilment"],warehouse:["site-warehouse","warehouse","warehouse"],qc:["site-qc","packing_house","qc"],logistics:["site-logistics","port_terminal","logistics"]};
