@@ -103,3 +103,27 @@ test("P0 endpoint matrix: public and retired endpoints retain their explicit con
     await app.close();
   }
 });
+
+test("P0 CORS preflight advertises methods and headers used by protected routes", async () => {
+  const app = await fixture();
+  try {
+    for (const method of ["DELETE", "PATCH"]) {
+      const response = await fetch(app.base + "/api/v1/supply/sites/site-a/assignments/user-a", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://localhost:5173",
+          "Access-Control-Request-Method": method,
+          "Access-Control-Request-Headers": "authorization,content-type,idempotency-key,x-request-id,x-active-tenant-id",
+        },
+      });
+      assert.equal(response.status, 204);
+      assert.match(response.headers.get("access-control-allow-methods") ?? "", new RegExp(method));
+      const allowedHeaders = (response.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+      for (const header of ["authorization", "content-type", "idempotency-key", "x-request-id", "x-active-tenant-id"]) {
+        assert.ok(allowedHeaders.split(",").map((value) => value.trim()).includes(header), `missing CORS header: ${header}`);
+      }
+    }
+  } finally {
+    await app.close();
+  }
+});
