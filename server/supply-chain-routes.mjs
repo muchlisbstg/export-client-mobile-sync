@@ -106,8 +106,14 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
         const siteId=String(req.params.siteId??"").trim();
         const userId=String(req.body?.userId??"").trim();
         if (!userId) throw new SupplyChainError(400,"user_id_required");
-        const target=db.prepare("SELECT id FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
+        const target=db.prepare("SELECT id,site_type AS siteType FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
         if (!target) throw new SupplyChainError(404,"site_not_found");
+        const membership=db.prepare("SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND user_id=? AND status='active'").get(tenant(res),userId);
+        if (!membership) throw new SupplyChainError(400,"user_not_active_enterprise_member");
+        const eligibleRoles=db.prepare("SELECT role FROM enterprise_role_assignments WHERE enterprise_id=? AND user_id=? AND status='active'").all(tenant(res),userId);
+        if (!eligibleRoles.some(({role})=>siteAllowedForRoles([role],target.siteType))) {
+          throw new SupplyChainError(400,"user_role_incompatible_with_site");
+        }
         const now=new Date().toISOString();
         db.prepare(`INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at)
           VALUES(?,?,?,'active',?,?,?)
