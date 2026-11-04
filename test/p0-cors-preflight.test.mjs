@@ -12,7 +12,6 @@ const allowedHeaders = [
   "idempotency-key",
   "x-active-tenant-id",
   "x-request-id",
-  "x-sync-peer",
 ];
 
 async function fixture() {
