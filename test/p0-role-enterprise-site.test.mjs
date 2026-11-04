@@ -183,3 +183,28 @@ test("P0 site assignment grant requires an active enterprise member and a site-c
     await app.close();
   }
 });
+
+test("P0 role and site assignment revocation take effect on the next request", async () => {
+  const app = await fixture();
+  try {
+    const initial = await request(app, "warehouse", "GET", "/api/v1/supply/stock?siteId=warehouse-site");
+    assert.equal(initial.status, 200, "active role and site assignment permit scoped stock read");
+
+    app.db.prepare("UPDATE supply_site_assignments SET status='revoked' WHERE tenant_id='ent-1' AND user_id=? AND site_id='warehouse-site'")
+      .run(users.warehouse);
+    const afterSiteRevoke = await request(app, "warehouse", "GET", "/api/v1/supply/stock?siteId=warehouse-site");
+    assert.equal(afterSiteRevoke.status, 403, "revoked site assignment must deny the very next request");
+
+    app.db.prepare("UPDATE supply_site_assignments SET status='active' WHERE tenant_id='ent-1' AND user_id=? AND site_id='warehouse-site'")
+      .run(users.warehouse);
+    const afterSiteRestore = await request(app, "warehouse", "GET", "/api/v1/supply/stock?siteId=warehouse-site");
+    assert.equal(afterSiteRestore.status, 200, "restoring the assignment restores the scoped read");
+
+    app.db.prepare("UPDATE enterprise_role_assignments SET status='revoked' WHERE enterprise_id='ent-1' AND user_id=? AND role='warehouse'")
+      .run(users.warehouse);
+    const afterRoleRevoke = await request(app, "warehouse", "GET", "/api/v1/supply/stock?siteId=warehouse-site");
+    assert.equal(afterRoleRevoke.status, 403, "revoked enterprise role must deny the very next request");
+  } finally {
+    await app.close();
+  }
+});
