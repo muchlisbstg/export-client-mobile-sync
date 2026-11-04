@@ -1,0 +1,192 @@
+name: Release Readiness Matrix (P0 + Expo SDK 58)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-regression:
+    name: P0 negative and regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Full test suite
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Upload test context
+        if: always()
+        run: |
+          {
+            echo "commit_sha=$(git rev-parse HEAD)"
+            echo "node_version=$(node --version)"
+            echo "npm_version=$(npm --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  expo-compatibility:
+    name: Expo SDK 58 compatibility and fresh audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Expo dependency compatibility
+        run: npx expo install --check
+      - name: Expo public config validation
+        run: npx expo config --type public
+      - name: Capture fresh npm audit evidence
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > npm-audit.json 2> npm-audit.stderr.txt
+          code=$?
+          set -e
+          echo "$code" > npm-audit-exit-code.txt
+          {
+            echo "commit_sha=$(git rev-parse HEAD)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "package_json_sha256=$(sha256sum package.json | cut -d' ' -f1)"
+            echo "package_lock_sha256=$(sha256sum package-lock.json | cut -d' ' -f1)"
+            echo "audit_exit_code=$code"
+          } > npm-audit-metadata.txt
+          node -e 'const fs=require("node:fs");const r=JSON.parse(fs.readFileSync("npm-audit.json","utf8"));const v=r.metadata?.vulnerabilities;if(!v)throw Error("npm audit metadata missing");console.log(v)'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: npm-audit-${{ github.sha }}
+          path: |
+            npm-audit.json
+            npm-audit.stderr.txt
+            npm-audit-exit-code.txt
+            npm-audit-metadata.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  web-build:
+    name: Expo Web export
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx expo install --check
+      - run: npm run export:web
+      - uses: actions/upload-artifact@v7
+        with:
+          name: expo-web-dist-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  android-build:
+    name: Android debug APK build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: npm ci
+      - run: npx expo install --check
+      - run: npx expo prebuild --platform android --non-interactive
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-debug-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-simulator-build:
+    name: iOS Simulator build and launch
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx expo install --check
+      - run: npx expo prebuild --platform ios --no-install
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+      - name: Build iOS Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$(find ios -maxdepth 2 -name '*.xcworkspace' ! -path '*/Pods/*' -print -quit)"
+          test -n "$workspace"
+          xcodebuild -workspace "$workspace" -scheme ExportClient -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/DerivedData CODE_SIGNING_ALLOWED=NO build
+          app="ios/DerivedData/Build/Products/Release-iphonesimulator/ExportClient.app"
+          test -d "$app"
+          test -s "$app/main.jsbundle"
+          ditto -c -k --sequesterRsrc --keepParent "$app" ios-simulator-app.zip
+      - name: Boot, install, and launch Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > devices.json
+          device="$(node -e 'const d=JSON.parse(require("node:fs").readFileSync("devices.json","utf8"));const x=Object.values(d.devices).flat().find(v=>v.isAvailable&&/^iPhone/.test(v.name));if(!x)process.exit(2);process.stdout.write(x.udid)')"
+          xcrun simctl boot "$device" || true
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" ios/DerivedData/Build/Products/Release-iphonesimulator/ExportClient.app
+          output="$(xcrun simctl launch --terminate-running-process "$device" com.muchlisbstg.exportclient)"
+          echo "$output"
+          pid="$(printf '%s' "$output" | sed -nE 's/.*: ([0-9]+)$/\1/p' | tail -n1)"
+          test -n "$pid"
+          sleep 8
+          kill -0 "$pid"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-simulator-app-${{ github.sha }}
+          path: ios-simulator-app.zip
+          if-no-files-found: warn
+          retention-days: 14
