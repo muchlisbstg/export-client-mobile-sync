@@ -61,7 +61,7 @@ CORS is an origin boundary for browser clients, not a substitute for API authent
 
 - Origins: exact values from `WEB_ORIGINS`; no wildcard and no credentialed cross-origin cookies.
 - Methods: `GET`, `POST`, `PATCH`, `DELETE`.
-- Request headers: `Authorization`, `Content-Type`, `Idempotency-Key`, `X-Active-Tenant-Id`, `X-Request-Id`, and `X-Sync-Peer`.
+- Request headers: `Authorization`, `Content-Type`, `Idempotency-Key`, `X-Active-Tenant-Id`, `X-Request-Id`. The machine-only `X-Sync-Peer` header is deliberately excluded from browser CORS.
 - Preflight rejects unconfigured origins, methods outside the allowlist, and unapproved request headers.
 - Responses vary by Origin and, for preflight, by requested method and headers. Preflight cache max-age is 600 seconds.
 - Regression coverage: `test/p0-cors-preflight.test.mjs` checks allowed methods/headers and negative origin/method/header cases. The endpoint matrix also asserts the exact minimal `/health` body and `Cache-Control: no-store`.
