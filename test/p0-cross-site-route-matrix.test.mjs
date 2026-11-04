@@ -202,12 +202,19 @@ test("P0 handover and evidence enforce both site boundaries and active assignmen
       body:body===undefined?undefined:JSON.stringify(body),
     });
     const snapshot = () => ({
+      handovers: db.prepare("SELECT COUNT(*) AS n FROM handovers WHERE tenant_id='hx-enterprise'").get().n,
       handover: db.prepare("SELECT status FROM handovers WHERE tenant_id='hx-enterprise' AND id=?").get(handover.id).status,
       movements: db.prepare("SELECT COUNT(*) AS n FROM inventory_movements").get().n,
       entries: db.prepare("SELECT COUNT(*) AS n FROM inventory_entries").get().n,
       evidence: db.prepare("SELECT COUNT(*) AS n FROM supply_evidence").get().n,
     });
     const before = snapshot();
+
+    const sourceOnlyCannotPrepareHandoverToUnassignedDestination = await call("source-only", "/api/v1/supply/handovers", "POST", {
+      lotId:lot.lotId,fromSiteId:source.id,toSiteId:destination.id,quantityMilli:100,unit:"kg",handoverCode:"HX-DENIED",
+    });
+    assert.equal(sourceOnlyCannotPrepareHandoverToUnassignedDestination.status,403,
+      "handover creation must authorize both source and destination sites before writing");
 
     const sourceCannotDispatchFromUnassignedSource = await call("destination-only", `/api/v1/supply/handovers/${handover.id}/dispatch`, "POST", {});
     assert.equal(sourceCannotDispatchFromUnassignedSource.status, 403, "destination-only user must not dispatch from source site");
