@@ -7,6 +7,7 @@ import { inspectTransactionAuthorizationSchema } from "../scripts/inspect-transa
 test("schema contract audit is read-only and reports missing tenant/site integrity constraints", () => {
   const db = new Database(":memory:");
   try {
+    db.exec("CREATE TABLE inquiries (id TEXT PRIMARY KEY)");
     migrateTenantIsolation(db);
 
     const before = db.prepare("SELECT name, sql FROM sqlite_master WHERE type IN ('table','index','trigger') ORDER BY type,name").all();
