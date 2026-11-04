@@ -151,7 +151,7 @@ export function createServer(options = {}) {
     if (!allowedOrigins.includes(origin)) return res.status(403).json({ error: "origin_not_allowed" });
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Active-Tenant-Id, X-Request-Id");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     if (req.method === "OPTIONS") return res.sendStatus(204);
     return next();
