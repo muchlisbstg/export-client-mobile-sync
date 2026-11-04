@@ -94,7 +94,10 @@ test("P0 endpoint matrix: every protected method/path rejects invalid and expire
 test("P0 endpoint matrix: public and retired endpoints retain their explicit contracts", async () => {
   const app = await fixture();
   try {
-    assert.equal((await fetch(app.base + "/health")).status, 200);
+    const health = await fetch(app.base + "/health");
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { status: "ok" }, "public health must expose only the minimal liveness contract");
+    assert.equal(health.headers.get("cache-control"), "no-store");
     assert.equal((await fetch(app.base + "/api/v1/products")).status, 200);
     assert.equal((await fetch(app.base + "/api/v1/inquiries", { method: "POST" })).status, 400);
     assert.equal((await fetch(app.base + "/api/v1/inquiries/AAAAAAAAAAAAAAAAAAAAAAAA")).status, 404);
