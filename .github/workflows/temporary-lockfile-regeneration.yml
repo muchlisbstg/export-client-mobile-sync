@@ -55,7 +55,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix(deps): synchronize Expo dependency lockfile"
-          test "$(git diff-tree --no- no-commit-id --name-only -r HEAD | tr '\n' ' ')" = "package-lock.json "
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD | tr '\n' ' ')" = "package-lock.json "
           git push origin HEAD:"refs/heads/$TARGET_BRANCH"
       - name: Upload generated lockfile evidence
         uses: actions/upload-artifact@v4
