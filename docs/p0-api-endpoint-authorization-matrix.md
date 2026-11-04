@@ -50,19 +50,21 @@ The inventory above contains 29 unique method/path pairs. Route registrations ma
 5. **Transaction boundary:** buyer/seller party membership, explicit transaction assignment, operational site link, role mismatch, missing/revoked assignment, and cross-transaction IDs.
 6. **Mutation integrity:** denied requests do not create or mutate lots, inspections, stock movements, inventory entries, handovers, or evidence.
 7. **Audit fail-closed:** protected mutations do not report success if mandatory audit persistence fails; append-only audit invariants remain intact.
-8. **Public contract:** public routes remain explicitly public, rate-limited and validated; health stays minimal; retired routes remain 410.
+8. **CORS preflight:** configured origins can preflight GET, POST, PATCH, and DELETE with Authorization/Content-Type headers; unconfigured origins remain 403.
+9. **Public contract:** public routes remain explicitly public, rate-limited and validated; health stays minimal; retired routes remain 410.
 
 ## Existing test coverage (source inventory)
 
 | Test file | Coverage represented |
 |---|---|
 | `test/p0-endpoint-auth-matrix.test.mjs` | 24 protected method/path pairs × missing credentials; invalid and expired credentials; public/retired endpoint contracts |
+| `test/p0-cors-preflight.test.mjs` | Configured-origin GET/POST/PATCH/DELETE preflight and denial of unconfigured origins |
 | `test/security-authorization-remediation.test.mjs` | Protected surfaces, metadata spoofing, explicit server-side admin allowlist |
 | `test/p0-role-enterprise-site.test.mjs` | Role, active membership, tenant context, site type, assignment, and transaction-assignment denial cases |
 | `test/p0-cross-site-route-matrix.test.mjs` | Cross-site route denial and no-side-effect assertions; handover/evidence site boundaries |
 | `test/transaction-authorization.test.mjs` | Transaction role/assignment/site projection, revocation, cross-enterprise denial, append-only audit |
 
-A previous PR description records a focused run with 110 passing tests and a separate authorization-matrix workflow success. Those are historical PR evidence, not a fresh result for the release-readiness branch. This branch's CI run is the acceptance evidence for this candidate SHA.
+A previous PR description records a focused run with 110 passing tests and a separate authorization-matrix workflow success. Those are historical PR evidence, not a fresh result for the release-readiness branch. This branch's CI run is the acceptance evidence for this candidate SHA. The CORS regression specifically covers the PATCH/DELETE methods used by the API while preserving the explicit origin allowlist.
 
 ## P0 closure gate
 
