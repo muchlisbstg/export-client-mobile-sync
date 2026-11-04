@@ -95,6 +95,31 @@ export function migrateTenantIsolation(db) {
         created_at TEXT NOT NULL,
         CHECK (buyer_tenant_id <> seller_tenant_id)
       );
+
+      CREATE TABLE IF NOT EXISTS transaction_access_assignments (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        transaction_id TEXT NOT NULL REFERENCES commercial_transactions(id),
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('buyer','seller','supplier','warehouse','qc','logistics','auditor')),
+        site_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
+        granted_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,transaction_id,user_id,role)
+      );
+      CREATE INDEX IF NOT EXISTS idx_transaction_access_user
+        ON transaction_access_assignments(tenant_id,user_id,status,role,transaction_id);
+      CREATE TABLE IF NOT EXISTS transaction_site_links (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        transaction_id TEXT NOT NULL REFERENCES commercial_transactions(id),
+        site_id TEXT NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('supplier_fulfilment','warehouse','qc','logistics','audit')),
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,transaction_id,site_id,purpose)
+      );
+      CREATE INDEX IF NOT EXISTS idx_transaction_site_links_site
+        ON transaction_site_links(tenant_id,site_id,transaction_id);
       CREATE TABLE IF NOT EXISTS tenant_sync_outbox (
         queue_seq INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id TEXT NOT NULL UNIQUE,
