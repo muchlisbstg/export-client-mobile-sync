@@ -65,6 +65,10 @@ jobs:
           npm run typecheck
           npx expo install --check
           npx expo export --platform android
+          npx expo prebuild --platform ios --no-install --clean
+          test -f ios/*.xcodeproj/project.pbxproj
+          npx expo prebuild --platform android --no-install --clean
+          test -f android/gradlew
 
       - name: Summarize isolated experiment
         if: always()
