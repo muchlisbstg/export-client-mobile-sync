@@ -219,9 +219,18 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
       ORDER BY CASE a.role WHEN 'buyer' THEN 1 WHEN 'seller' THEN 2 WHEN 'supplier' THEN 3
         WHEN 'warehouse' THEN 4 WHEN 'qc' THEN 5 WHEN 'logistics' THEN 6 ELSE 7 END`)
       .all(enterpriseId,transactionId,userId);
+    const parties = db.prepare("SELECT buyer_tenant_id AS buyerTenantId,seller_tenant_id AS sellerTenantId FROM commercial_transactions WHERE id=?").get(transactionId);
     for (const assignment of assignments) {
       if (!roles.includes(assignment.role) || !transactionRoles.has(assignment.role)) continue;
-      if (["buyer","seller","auditor"].includes(assignment.role) && assignment.siteId === null) return assignment;
+      if (assignment.role === "buyer" || assignment.role === "seller") {
+        const sideTenantId = assignment.role === "buyer" ? parties.buyerTenantId : parties.sellerTenantId;
+        const sideRole = assignment.role === "buyer" ? ["buyer_admin","buyer_member"] : ["seller_admin","seller_member"];
+        const sideMembership = db.prepare(`SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND user_id=? AND status='active' AND role IN (?,?)`)
+          .get(sideTenantId,userId,...sideRole);
+        if (sideMembership && assignment.siteId === null) return assignment;
+        continue;
+      }
+      if (assignment.role === "auditor" && assignment.siteId === null) return assignment;
       if (["supplier","warehouse","qc","logistics"].includes(assignment.role) && assignment.siteId) {
         const purpose = {supplier:"supplier_fulfilment",warehouse:"warehouse",qc:"qc",logistics:"logistics"}[assignment.role];
         const linked = db.prepare(`SELECT p.site_type AS siteType FROM transaction_site_links l
@@ -297,6 +306,13 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
         if(!tx) throw new SupplyChainError(404,"transaction_not_found");
         const roleGrant=db.prepare("SELECT 1 FROM enterprise_role_assignments WHERE enterprise_id=? AND user_id=? AND role=? AND status='active'").get(tenant(res),userId,role);
         if(!roleGrant) throw new SupplyChainError(400,"user_role_not_active");
+        if(role==="buyer" || role==="seller"){
+          const partyColumn=role==="buyer"?"buyer_tenant_id":"seller_tenant_id";
+          const sideRole=role==="buyer"?["buyer_admin","buyer_member"]:["seller_admin","seller_member"];
+          const sideTenant=db.prepare("SELECT "+partyColumn+" AS tenantId FROM commercial_transactions WHERE id=?").get(transactionId);
+          const sideMembership=sideTenant&&db.prepare("SELECT 1 FROM tenant_memberships WHERE tenant_id=? AND user_id=? AND status='active' AND role IN (?,?)").get(sideTenant.tenantId,userId,...sideRole);
+          if(!sideMembership) throw new SupplyChainError(400,"user_not_active_on_transaction_side");
+        }
         if(siteId){
           const site=db.prepare("SELECT 1 FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
           const linked=db.prepare("SELECT 1 FROM transaction_site_links WHERE tenant_id=? AND transaction_id=? AND site_id=?").get(tenant(res),transactionId,siteId);
