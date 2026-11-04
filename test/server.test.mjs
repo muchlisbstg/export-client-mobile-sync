@@ -116,10 +116,11 @@ test("sync is off by default and rejects unauthenticated or malformed peer recor
   });
   assert.equal(invalidCredential.status, 401);
   assert.deepEqual(await invalidCredential.json(), { error: "unauthorized" });
-  const malformed = await fetch(`${enabled.base}/api/v1/sync/inquiries`, {
+  const noAllowlist = await fetch(`${enabled.base}/api/v1/sync/inquiries`, {
     method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" }, body: "{}",
   });
-  assert.equal(malformed.status, 400);
+  assert.equal(noAllowlist.status, 503);
+  assert.deepEqual(await noAllowlist.json(), { error: "sync_peer_allowlist_not_configured" });
 });
 
 test("outbound replication waits for both a secret and a configured peer", async () => {
@@ -261,7 +262,7 @@ test("peer replication is idempotent and conflicts never overwrite stored data",
     quantity,unit,status,created_at AS createdAt,origin_node_id AS originNodeId FROM inquiries WHERE tracking_code=?`).get(created.trackingCode);
   assert(record);
   const send = (payload) => fetch(`${nodeB.base}/api/v1/sync/inquiries`, {
-    method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" }, body: JSON.stringify(payload),
+    method: "POST", headers: { authorization: `Bearer ${secret}`, "x-sync-peer": "mobile-a", "content-type": "application/json" }, body: JSON.stringify(payload),
   });
   const wrongUnit = await send({ ...record, id: "22222222-2222-4222-8222-222222222222", trackingCode: "B".repeat(24), unit: "piece" });
   assert.equal(wrongUnit.status, 404);
@@ -323,6 +324,50 @@ test("single-enterprise mode locks context and disables legacy cross-enterprise 
   } finally { await service.close(); }
 });
 
+test("inbound sync requires an allowlisted immediate peer identity and preserves relayed origin provenance", async () => {
+  const { base, service } = await boot({
+    nodeId: "mobile-target",
+    syncSecret: secret,
+    syncPeers: "trusted-peer=http://127.0.0.1:6553",
+  });
+  try {
+    const record = {
+      id: "123e4567-e89b-42d3-a456-426614174111",
+      trackingCode: "ABCDEF0123456789ABCDEF11",
+      customerName: "Relay Test",
+      customerEmail: "relay@example.test",
+      destinationCountry: "Japan",
+      productId: "green-coffee",
+      quantity: 5,
+      unit: "kg",
+      status: "received",
+      createdAt: new Date().toISOString(),
+      originNodeId: "original-origin-node",
+    };
+    const send = (peer) => fetch(`${base}/api/v1/sync/inquiries`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${secret}`,
+        ...(peer === null ? {} : { "x-sync-peer": peer }),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(record),
+    });
+    const missing = await send(null);
+    assert.equal(missing.status, 401);
+    assert.deepEqual(await missing.json(), { error: "sync_peer_identity_required" });
+    const unknown = await send("untrusted-peer");
+    assert.equal(unknown.status, 403);
+    assert.deepEqual(await unknown.json(), { error: "sync_peer_not_configured" });
+    const relayed = await send("trusted-peer");
+    assert.equal(relayed.status, 201, await relayed.clone().text());
+    const stored = service.db.prepare("SELECT origin_node_id AS originNodeId FROM inquiries WHERE id=?").get(record.id);
+    assert.equal(stored.originNodeId, "original-origin-node",
+      "origin provenance must remain distinct from the immediate allowlisted relay peer");
+  } finally {
+    await service.close();
+  }
+});
 test("sync rejects unconfigured peer identities before writing records", async () => {
   const { base, service } = await boot({
     nodeId: "mobile-target",
