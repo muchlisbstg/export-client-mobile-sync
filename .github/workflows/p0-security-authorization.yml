@@ -1,6 +1,12 @@
 name: P0 Security Authorization Remediation
 
 on:
+  push:
+    branches: ["release-readiness/**"]
+    paths:
+      - "server/**"
+      - "test/security-authorization-remediation.test.mjs"
+      - ".github/workflows/p0-security-authorization.yml"
   pull_request:
     branches: [main]
     paths:
