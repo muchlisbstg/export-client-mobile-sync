@@ -1,7 +1,7 @@
 # P0 API endpoint authorization matrix
 
 **Audited baseline:** `5da5ecf950f6269048312d2c9353d8e912a9ff41`  
-**Remediation head at last update:** `94a4ca8fcd8d19b1e684bbbf7284be18291e515`  
+**Remediation/test head for this evidence update:** `b572a5e299e6fe8ad4caf88505e7a21025c0a5bc`  
 **Inventory method:** static extraction from `server/index.mjs` and `server/supply-chain-routes.mjs`, cross-checked against middleware registration, auth helpers, and test source.  
 **Route count:** 31 registrations / 29 unique method-path pairs at the audited baseline. Two duplicate transaction GET registrations were removed in the follow-up; current route source has 29 registrations / 29 unique method-path pairs.  
 **Scope:** route authentication, enterprise role, transaction assignment, site scope, public contracts, peer synchronization, CORS, and test coverage.
@@ -62,3 +62,97 @@ The API's CORS middleware now advertises `GET, POST, PATCH, DELETE, OPTIONS` and
 - The follow-up added explicit CORS preflight assertions and aligned the app's health display with the minimal public liveness contract. Operational peer topology and queue metrics remain intentionally absent from public health.
 - **Not yet proven:** every endpoint × role × enterprise × site combination; all denied-write paths; audit-storage failure for every mutation; full role-revocation lifecycle across every resource.
 - CI passing is necessary evidence, not independent Security approval. P0 remains **OPEN** pending exact-SHA verification and independent Security Review.
+
+
+## Complete role-denial and site-scope test matrix
+
+The following integration tests use disposable SQLite databases, synthetic identities, synthetic enterprise/site records, and the actual Express route registration. No staging or production database is used.
+
+### Route × role denial matrix
+
+The new test in `test/p0-role-enterprise-site.test.mjs` exercises the following endpoint policies against all eight active enterprise roles (`enterprise_admin`, `buyer`, `seller`, `supplier`, `warehouse`, `qc`, `logistics`, `auditor`):
+
+| Endpoint | Allowed roles | Negative role assertions |
+|---|---|---|
+| `POST /api/v1/supply/sites` | enterprise_admin | Every non-admin role |
+| `POST /api/v1/supply/sites/:siteId/assignments` | enterprise_admin | Every non-admin role |
+| `DELETE /api/v1/supply/sites/:siteId/assignments/:userId` | enterprise_admin | Every non-admin role |
+| `POST /api/v1/supply/lots` | enterprise_admin, supplier, warehouse | buyer, seller, qc, logistics, auditor |
+| `POST /api/v1/supply/lots/:lotId/inspections` | enterprise_admin, qc | buyer, seller, supplier, warehouse, logistics, auditor |
+| `POST /api/v1/supply/processing` | enterprise_admin, warehouse | buyer, seller, supplier, qc, logistics, auditor |
+| `POST /api/v1/supply/movements` | enterprise_admin, warehouse, logistics | buyer, seller, supplier, qc, auditor |
+| `GET /api/v1/supply/stock` | enterprise_admin, buyer, warehouse, qc, logistics, auditor | seller, supplier |
+| `GET /api/v1/supply/lots/:lotId/trace` | enterprise_admin, buyer, seller, warehouse, qc, logistics, auditor | supplier |
+| `POST /api/v1/supply/handovers` | enterprise_admin, warehouse, logistics | buyer, seller, supplier, qc, auditor |
+| `POST /api/v1/supply/handovers/:handoverId/dispatch` | enterprise_admin, logistics | buyer, seller, supplier, warehouse, qc, auditor |
+| `POST /api/v1/supply/handovers/:handoverId/receive` | enterprise_admin, warehouse, logistics, qc | buyer, seller, supplier, auditor |
+| `POST /api/v1/transactions/:id/access-assignments` | enterprise_admin | Every non-admin role |
+| `DELETE /api/v1/transactions/:id/access-assignments/:userId/:role` | enterprise_admin | Every non-admin role |
+| `POST /api/v1/transactions/:id/site-links` | enterprise_admin | Every non-admin role |
+
+The route-level negative matrix contains **82 expected 403 assertions**. It also checks that every active role can reach the assignment-filtered transaction list, while a user without a transaction assignment receives a non-disclosing 404 for a transaction detail.
+
+### Evidence entity × role matrix
+
+The route admits active enterprise roles, but the service applies a narrower entity-specific policy. The test submits a synthetic non-existent entity so role authorization is evaluated before entity lookup.
+
+| Evidence entity | Allowed roles | Denied roles |
+|---|---|---|
+| lot | enterprise_admin, supplier, warehouse | buyer, seller, qc, logistics, auditor |
+| inspection | enterprise_admin, qc | buyer, seller, supplier, warehouse, logistics, auditor |
+| movement | enterprise_admin, warehouse, logistics | buyer, seller, supplier, qc, auditor |
+| handover | enterprise_admin, warehouse, logistics | buyer, seller, supplier, qc, auditor |
+
+This adds **32 role/entity assertions** (8 roles × 4 entity types). For allowed roles the synthetic entity is expected to return 404; for disallowed roles it must return 403.
+
+### Transaction assignment and site-link mutations
+
+`test/transaction-authorization.test.mjs` now verifies:
+- Non-admin cannot grant transaction access (403).
+- Admin can grant a role only for a current-enterprise transaction and a linked site (201).
+- Admin can link a current-enterprise active site (201).
+- Cross-enterprise transaction assignment is hidden (404).
+- Cross-enterprise site link is hidden (404).
+- Admin can revoke an exact active assignment (200).
+- Revoked user loses transaction detail access immediately (404).
+
+### Site-boundary behavioral evidence
+
+Existing and extended synthetic tests cover:
+- Lot intake: foreign-tenant, inactive, incompatible-type, and unassigned site denial.
+- Inspection: an assignment at a different site cannot be substituted for the lot's actual site.
+- Processing: warehouse cannot substitute an unassigned QC site.
+- Movement: both source and destination require authorization.
+- Handover creation: source-only assignment cannot create a transfer to an unassigned destination.
+- Dispatch and receipt: source and destination authorization are checked independently.
+- Stock and trace: inaccessible site/origin site is denied.
+- Evidence: handover evidence is denied when the actor is not authorized for the source site.
+- Site revocation and site deactivation: subsequent reads are denied.
+- Denied requests leave selected inspection, movement, inventory, evidence, and handover state unchanged.
+
+### Security review evidence index
+
+| Evidence | File |
+|---|---|
+| Route authorization policy inventory | `docs/p0-api-endpoint-authorization-matrix.md` |
+| Missing/invalid/expired bearer + CORS preflight | `test/p0-endpoint-auth-matrix.test.mjs` |
+| Active role denial matrix + evidence entity role matrix | `test/p0-role-enterprise-site.test.mjs` |
+| Cross-site denied-write and two-site transfer tests | `test/p0-cross-site-route-matrix.test.mjs` |
+| Transaction assignment/site-link/read/revocation tests | `test/transaction-authorization.test.mjs` |
+| Source route registration and middleware | `server/index.mjs`, `server/supply-chain-routes.mjs` |
+| Enterprise authorization helper | `server/authorization.mjs` |
+| Supply-chain entity/service authorization | `server/supply-chain.mjs` |
+
+## Remaining limitations — P0 stays OPEN
+
+The matrix now has broad negative-role and representative site-boundary integration coverage, but it is **not a full Cartesian proof of every allowed role × every resource × every site state**. The following must remain explicit review items:
+
+1. Run all newly expanded tests on the exact resulting branch SHA and retain full logs.
+2. Add positive-path tests for every allowed role on every read and mutation route, using valid synthetic resources and role-compatible sites.
+3. Add systematic foreign-tenant, inactive-site, unassigned-site, and revoked-assignment cases to each individual site-bound route, not only representative route families.
+4. Inject audit-table write failures for each mutation and verify transaction rollback/fail-closed behavior. Current tests prove selected audit and denied-write behavior, not every mutation's failure path.
+5. Verify role revocation (enterprise role assignment) independently from site-assignment revocation for each affected route.
+6. Verify CORS browser preflight and actual requests from Web, not only synthetic OPTIONS responses.
+7. Obtain independent Security Review against the exact SHA. CI success is supporting evidence only and does not close P0.
+
+No real customer data, staging database, migration, deployment, or paid infrastructure was used. No PR merge or release approval is implied by this evidence pack.
