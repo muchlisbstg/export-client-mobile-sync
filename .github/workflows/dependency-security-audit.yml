@@ -1,0 +1,65 @@
+name: Dependency Security Audit
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/dependency-audit-report.mjs"
+      - ".github/workflows/dependency-security-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: Full and production dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install exact lockfile dependency tree
+        run: npm ci
+
+      - name: Run full dependency audit
+        shell: bash
+        run: |
+          mkdir -p reports
+          set +e
+          npm audit --json > reports/npm-audit-full.json
+          status=$?
+          set -e
+          echo "npm_audit_full_exit_code=$status" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run production-only dependency audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > reports/npm-audit-production.json
+          status=$?
+          set -e
+          echo "npm_audit_production_exit_code=$status" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate detailed dependency report
+        run: node scripts/dependency-audit-report.mjs reports/npm-audit-full.json reports/npm-audit-production.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw audit evidence and report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: |
+            dependency-audit-report.md
+            reports/npm-audit-full.json
+            reports/npm-audit-production.json
+          if-no-files-found: error
+          retention-days: 30
