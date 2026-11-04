@@ -218,6 +218,12 @@ test("P0 complete role-denial matrix covers every protected supply-chain and tra
       }
     }
     assert.ok(assertions >= 65, `expected broad role-denial coverage, got ${assertions} assertions`);
+    for (const role of roleTokens) {
+      const list = await request(app, role, "GET", "/api/v1/transactions");
+      assert.equal(list.status, 200, `${role} role is eligible to enter the assignment-filtered transaction list`);
+      const detail = await request(app, role, "GET", "/api/v1/transactions/missing-synthetic-transaction");
+      assert.equal(detail.status, 404, `${role} without an assignment must not read a transaction detail`);
+    }
   } finally {
     await app.close();
   }
