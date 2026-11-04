@@ -198,4 +198,159 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     tenantId:tenant(res),actorId:actor(res),handoverId:req.params.handoverId,
     receivedQuantityMilli:req.body?.receivedQuantityMilli,sealNumber:req.body?.sealNumber,
   })));
+
+  // SEC-03: transaction reads require an explicit, active user-to-transaction assignment.
+  // Operational roles additionally require a linked site and an active user site assignment.
+  const transactionRoles = new Set(["buyer","seller","supplier","warehouse","qc","logistics","auditor"]);
+  const transactionSchemaReady = () => {
+    const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name));
+    return ["transaction_access_assignments","transaction_site_links","supply_audit_events"].every(name=>tables.has(name));
+  };
+  const transactionAudit = (req,res,action,outcome,transactionId,details={}) => {
+    if (!transactionSchemaReady()) return false;
+    return audit(req,res,{action,outcome,entityType:"commercial_transaction",entityId:transactionId,details});
+  };
+  const transactionAccess = (transactionId, userId, roles, enterpriseId) => {
+    if (roles.includes("enterprise_admin")) return { role:"enterprise_admin" };
+    const assignments = db.prepare(`SELECT a.role,a.site_id AS siteId
+      FROM transaction_access_assignments a
+      WHERE a.tenant_id=? AND a.transaction_id=? AND a.user_id=? AND a.status='active'
+      ORDER BY CASE a.role WHEN 'buyer' THEN 1 WHEN 'seller' THEN 2 WHEN 'supplier' THEN 3
+        WHEN 'warehouse' THEN 4 WHEN 'qc' THEN 5 WHEN 'logistics' THEN 6 ELSE 7 END`)
+      .all(enterpriseId,transactionId,userId);
+    for (const assignment of assignments) {
+      if (!roles.includes(assignment.role) || !transactionRoles.has(assignment.role)) continue;
+      if (["buyer","seller","auditor"].includes(assignment.role) && assignment.siteId === null) return assignment;
+      if (["supplier","warehouse","qc","logistics"].includes(assignment.role) && assignment.siteId) {
+        const linked = db.prepare(`SELECT 1 FROM transaction_site_links l
+          JOIN supply_site_assignments s ON s.tenant_id=l.tenant_id AND s.site_id=l.site_id
+          WHERE l.tenant_id=? AND l.transaction_id=? AND l.site_id=?
+            AND s.user_id=? AND s.status='active'`).get(enterpriseId,transactionId,assignment.siteId,userId);
+        if (linked) return assignment;
+      }
+    }
+    return null;
+  };
+  const transactionProjection = (row, role) => {
+    const common = { id:row.id, status:row.status, createdAt:row.createdAt };
+    if (["enterprise_admin","buyer","seller"].includes(role)) {
+      return { ...common, buyerTenantId:row.buyerTenantId, sellerTenantId:row.sellerTenantId, inquiryId:row.inquiryId };
+    }
+    // Operational and auditor projections intentionally omit commercial participant IDs and inquiry linkage.
+    return common;
+  };
+  const transactionSelect = `SELECT id,buyer_tenant_id AS buyerTenantId,seller_tenant_id AS sellerTenantId,
+    inquiry_id AS inquiryId,status,created_at AS createdAt FROM commercial_transactions`;
+  const transactionRead = (req,res,transactionId=null) => {
+    if (!transactionSchemaReady()) return res.status(503).json({error:"transaction_access_schema_not_ready"});
+    const active = res.locals.activeTenant;
+    const userId = actor(res);
+    const roles = active?.roles ?? [];
+    if (roles.includes("enterprise_admin")) {
+      const rows = transactionId
+        ? [db.prepare(transactionSelect+" WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)").get(transactionId,active.id,active.id)].filter(Boolean)
+        : db.prepare(transactionSelect+" WHERE buyer_tenant_id=? OR seller_tenant_id=? ORDER BY created_at DESC LIMIT 100").all(active.id,active.id);
+      const row = rows[0];
+      if (transactionId && !row) {
+        transactionAudit(req,res,"transaction_read","denied",transactionId,{reason:"not_found_or_out_of_enterprise_scope"});
+        return res.status(404).json({error:"transaction_not_found"});
+      }
+      for (const item of rows) transactionAudit(req,res,"transaction_read","success",item.id,{role:"enterprise_admin"});
+      res.setHeader("Cache-Control","no-store");
+      return res.json(transactionId ? {data:transactionProjection(row,"enterprise_admin")} : {data:rows.map(item=>transactionProjection(item,"enterprise_admin"))});
+    }
+    const baseRows = transactionId
+      ? [db.prepare(transactionSelect+" WHERE id=?").get(transactionId)].filter(Boolean)
+      : db.prepare(transactionSelect+" ORDER BY created_at DESC LIMIT 500").all();
+    const visible = [];
+    for (const row of baseRows) {
+      const access = transactionAccess(row.id,userId,roles,active.id);
+      if (!access) continue;
+      visible.push(transactionProjection(row,access.role));
+    }
+    if (transactionId && visible.length===0) {
+      transactionAudit(req,res,"transaction_read","denied",transactionId,{reason:"assignment_missing_or_scope_denied"});
+      return res.status(404).json({error:"transaction_not_found"});
+    }
+    for (const row of visible) transactionAudit(req,res,"transaction_read","success",row.id,{role:roles.find(role=>transactionRoles.has(role))??"assigned"});
+    res.setHeader("Cache-Control","no-store");
+    return res.json(transactionId ? {data:visible[0]} : {data:visible});
+  };
+  app.get("/api/v1/transactions",auth.authenticate,requireActiveTenant,requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"),(req,res)=>transactionRead(req,res));
+  app.get("/api/v1/transactions/:id",auth.authenticate,requireActiveTenant,requireEnterpriseRole("enterprise_admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"),(req,res)=>transactionRead(req,res,String(req.params.id??"")));
+
+  app.post("/api/v1/transactions/:id/access-assignments",...secured,requireEnterpriseRole("enterprise_admin"),(req,res)=>{
+    if (!transactionSchemaReady()) return res.status(503).json({error:"transaction_access_schema_not_ready"});
+    const transactionId=String(req.params.id??"").trim(), userId=String(req.body?.userId??"").trim();
+    const role=String(req.body?.role??"").trim(), siteId=req.body?.siteId==null?null:String(req.body.siteId).trim();
+    if (!userId || !transactionRoles.has(role)) return res.status(400).json({error:"invalid_transaction_assignment"});
+    if (["supplier","warehouse","qc","logistics"].includes(role) && !siteId) return res.status(400).json({error:"site_scope_required"});
+    if (["buyer","seller","auditor"].includes(role) && siteId) return res.status(400).json({error:"site_scope_not_allowed"});
+    try {
+      const result=db.transaction(()=>{
+        const tx=db.prepare("SELECT id FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)").get(transactionId,tenant(res),tenant(res));
+        if(!tx) throw new SupplyChainError(404,"transaction_not_found");
+        const roleGrant=db.prepare("SELECT 1 FROM enterprise_role_assignments WHERE enterprise_id=? AND user_id=? AND role=? AND status='active'").get(tenant(res),userId,role);
+        if(!roleGrant) throw new SupplyChainError(400,"user_role_not_active");
+        if(siteId){
+          const site=db.prepare("SELECT 1 FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
+          const linked=db.prepare("SELECT 1 FROM transaction_site_links WHERE tenant_id=? AND transaction_id=? AND site_id=?").get(tenant(res),transactionId,siteId);
+          if(!site||!linked) throw new SupplyChainError(400,"transaction_site_link_required");
+        }
+        const now=new Date().toISOString();
+        db.prepare(`INSERT INTO transaction_access_assignments(tenant_id,transaction_id,user_id,role,site_id,status,granted_by,created_at)
+          VALUES(?,?,?,?,?,'active',?,?) ON CONFLICT(tenant_id,transaction_id,user_id,role)
+          DO UPDATE SET site_id=excluded.site_id,status='active',granted_by=excluded.granted_by,created_at=excluded.created_at`)
+          .run(tenant(res),transactionId,userId,role,siteId,actor(res),now);
+        if(!transactionAudit(req,res,"transaction_assignment_grant","success",transactionId,{userId,role,siteId})) throw new Error("audit_write_failed");
+        return {transactionId,userId,role,siteId,status:"active"};
+      })();
+      return res.status(201).json({data:result});
+    }catch(error){
+      if(error?.message==="audit_write_failed") return res.status(503).json({error:"audit_unavailable"});
+      if(error instanceof SupplyChainError) return res.status(error.status).json({error:error.code});
+      return res.status(500).json({error:"transaction_assignment_failed"});
+    }
+  });
+  app.delete("/api/v1/transactions/:id/access-assignments/:userId/:role",...secured,requireEnterpriseRole("enterprise_admin"),(req,res)=>{
+    if (!transactionSchemaReady()) return res.status(503).json({error:"transaction_access_schema_not_ready"});
+    const transactionId=String(req.params.id??""), userId=String(req.params.userId??""), role=String(req.params.role??"");
+    try{
+      const result=db.transaction(()=>{
+        const changed=db.prepare(`UPDATE transaction_access_assignments SET status='revoked'
+          WHERE tenant_id=? AND transaction_id=? AND user_id=? AND role=? AND status='active'`)
+          .run(tenant(res),transactionId,userId,role);
+        if(!changed.changes) throw new SupplyChainError(404,"active_assignment_not_found");
+        if(!transactionAudit(req,res,"transaction_assignment_revoke","success",transactionId,{userId,role})) throw new Error("audit_write_failed");
+        return {transactionId,userId,role,status:"revoked"};
+      })();
+      return res.json({data:result});
+    }catch(error){
+      if(error?.message==="audit_write_failed") return res.status(503).json({error:"audit_unavailable"});
+      if(error instanceof SupplyChainError) return res.status(error.status).json({error:error.code});
+      return res.status(500).json({error:"transaction_assignment_failed"});
+    }
+  });
+  app.post("/api/v1/transactions/:id/site-links",...secured,requireEnterpriseRole("enterprise_admin"),(req,res)=>{
+    if (!transactionSchemaReady()) return res.status(503).json({error:"transaction_access_schema_not_ready"});
+    const transactionId=String(req.params.id??""),siteId=String(req.body?.siteId??"").trim(),purpose=String(req.body?.purpose??"").trim();
+    if(!siteId||!["supplier_fulfilment","warehouse","qc","logistics","audit"].includes(purpose)) return res.status(400).json({error:"invalid_transaction_site_link"});
+    try{
+      const result=db.transaction(()=>{
+        const tx=db.prepare("SELECT 1 FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)").get(transactionId,tenant(res),tenant(res));
+        const site=db.prepare("SELECT 1 FROM supply_sites WHERE tenant_id=? AND id=? AND active=1").get(tenant(res),siteId);
+        if(!tx||!site) throw new SupplyChainError(404,"transaction_or_site_not_found");
+        db.prepare("INSERT OR IGNORE INTO transaction_site_links(tenant_id,transaction_id,site_id,purpose,created_by,created_at) VALUES(?,?,?,?,?,?)")
+          .run(tenant(res),transactionId,siteId,purpose,actor(res),new Date().toISOString());
+        if(!transactionAudit(req,res,"transaction_site_link","success",transactionId,{siteId,purpose})) throw new Error("audit_write_failed");
+        return {transactionId,siteId,purpose};
+      })();
+      return res.status(201).json({data:result});
+    }catch(error){
+      if(error?.message==="audit_write_failed") return res.status(503).json({error:"audit_unavailable"});
+      if(error instanceof SupplyChainError) return res.status(error.status).json({error:error.code});
+      return res.status(500).json({error:"transaction_site_link_failed"});
+    }
+  });
+
 }
