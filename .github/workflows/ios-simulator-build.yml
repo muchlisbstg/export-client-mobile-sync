@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="ios/DerivedData/Build/Products/Debug-iphonesimulator/ExportClient.app"
+          APP_PATH="ios/DerivedData/Build/Products/Release-iphonesimulator/ExportClient.app"
           BUNDLE_ID="com.muchlisbstg.exportclient"
           EVIDENCE_DIR="ios-simulator-smoke-evidence"
           mkdir -p "$EVIDENCE_DIR"
@@ -123,7 +123,7 @@ jobs:
 
           LAUNCH_OUTPUT="$(xcrun simctl launch --terminate-running-process "$DEVICE_ID" "$BUNDLE_ID")"
           printf '%s\n' "$LAUNCH_OUTPUT" | tee "$EVIDENCE_DIR/launch-output.txt"
-          APP_PID="$(printf '%s\\n' "$LAUNCH_OUTPUT" | sed -nE 's/.*: ([0-9]+)$/\1/p' | tail -n 1)"
+          APP_PID="$(printf '%s\n' "$LAUNCH_OUTPUT" | sed -nE 's/.*: ([0-9]+)$/\1/p' | tail -n 1)"
           test -n "$APP_PID"
           sleep 8
           kill -0 "$APP_PID"
