@@ -222,10 +222,12 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
       if (!roles.includes(assignment.role) || !transactionRoles.has(assignment.role)) continue;
       if (["buyer","seller","auditor"].includes(assignment.role) && assignment.siteId === null) return assignment;
       if (["supplier","warehouse","qc","logistics"].includes(assignment.role) && assignment.siteId) {
+        const purpose = {supplier:"supplier_fulfilment",warehouse:"warehouse",qc:"qc",logistics:"logistics"}[assignment.role];
         const linked = db.prepare(`SELECT 1 FROM transaction_site_links l
           JOIN supply_site_assignments s ON s.tenant_id=l.tenant_id AND s.site_id=l.site_id
-          WHERE l.tenant_id=? AND l.transaction_id=? AND l.site_id=?
-            AND s.user_id=? AND s.status='active'`).get(enterpriseId,transactionId,assignment.siteId,userId);
+          JOIN supply_sites p ON p.tenant_id=l.tenant_id AND p.id=l.site_id AND p.active=1
+          WHERE l.tenant_id=? AND l.transaction_id=? AND l.site_id=? AND l.purpose=?
+            AND s.user_id=? AND s.status='active'`).get(enterpriseId,transactionId,assignment.siteId,purpose,userId);
         if (linked) return assignment;
       }
     }
@@ -252,10 +254,10 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
         : db.prepare(transactionSelect+" WHERE buyer_tenant_id=? OR seller_tenant_id=? ORDER BY created_at DESC LIMIT 100").all(active.id,active.id);
       const row = rows[0];
       if (transactionId && !row) {
-        transactionAudit(req,res,"transaction_read","denied",transactionId,{reason:"not_found_or_out_of_enterprise_scope"});
+        if (!transactionAudit(req,res,"transaction_read","denied",transactionId,{reason:"not_found_or_out_of_enterprise_scope"})) return res.status(503).json({error:"audit_unavailable"});
         return res.status(404).json({error:"transaction_not_found"});
       }
-      for (const item of rows) transactionAudit(req,res,"transaction_read","success",item.id,{role:"enterprise_admin"});
+      for (const item of rows) if (!transactionAudit(req,res,"transaction_read","success",item.id,{role:"enterprise_admin"})) return res.status(503).json({error:"audit_unavailable"});
       res.setHeader("Cache-Control","no-store");
       return res.json(transactionId ? {data:transactionProjection(row,"enterprise_admin")} : {data:rows.map(item=>transactionProjection(item,"enterprise_admin"))});
     }
@@ -269,10 +271,10 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
       visible.push(transactionProjection(row,access.role));
     }
     if (transactionId && visible.length===0) {
-      transactionAudit(req,res,"transaction_read","denied",transactionId,{reason:"assignment_missing_or_scope_denied"});
+      if (!transactionAudit(req,res,"transaction_read","denied",transactionId,{reason:"assignment_missing_or_scope_denied"})) return res.status(503).json({error:"audit_unavailable"});
       return res.status(404).json({error:"transaction_not_found"});
     }
-    for (const row of visible) transactionAudit(req,res,"transaction_read","success",row.id,{role:roles.find(role=>transactionRoles.has(role))??"assigned"});
+    for (const row of visible) if (!transactionAudit(req,res,"transaction_read","success",row.id,{role:"assigned"})) return res.status(503).json({error:"audit_unavailable"});
     res.setHeader("Cache-Control","no-store");
     return res.json(transactionId ? {data:visible[0]} : {data:visible});
   };
