@@ -23,22 +23,28 @@ test("SEC-03 transaction reads require explicit assignment, role and site scope;
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('buyer-side','buyer','Buyer Side',?)").run(now);
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('seller-side','seller','Seller Side',?)").run(now);
     db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES('tx-1','buyer-side','enterprise-1','pending',?)").run(now);
-    const siteId="site-1";
-    db.prepare("INSERT INTO supply_sites(id,tenant_id,site_code,name,site_type,active,created_at) VALUES(?,?,?,?,?,1,?)").run(siteId,"enterprise-1","WH-1","Warehouse","warehouse",now);
-    db.prepare("INSERT INTO transaction_site_links(tenant_id,transaction_id,site_id,purpose,created_by,created_at) VALUES(?,?,?,?,?,?)").run("enterprise-1","tx-1",siteId,"warehouse","user-admin",now);
-    db.prepare("INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at) VALUES(?,?,?,'active',?,?,?)").run("enterprise-1","user-warehouse",siteId,"user-admin",now,now);
+    const sites={supplier:["site-supplier","supplier","supplier_fulfilment"],warehouse:["site-warehouse","warehouse","warehouse"],qc:["site-qc","packing_house","qc"],logistics:["site-logistics","port_terminal","logistics"]};
     const grant=db.prepare("INSERT INTO transaction_access_assignments(tenant_id,transaction_id,user_id,role,site_id,status,granted_by,created_at) VALUES('enterprise-1','tx-1',?,?,?,'active','user-admin',?)");
-    grant.run("user-buyer","buyer",null,now);grant.run("user-seller","seller",null,now);
-    grant.run("user-supplier","supplier",siteId,now);grant.run("user-warehouse","warehouse",siteId,now);
-    grant.run("user-qc","qc",siteId,now);grant.run("user-logistics","logistics",siteId,now);
-    grant.run("user-auditor","auditor",null,now);
+    grant.run("user-buyer","buyer",null,now);grant.run("user-seller","seller",null,now);grant.run("user-auditor","auditor",null,now);
+    for(const [role,[siteId,siteType,purpose]] of Object.entries(sites)){
+      db.prepare("INSERT INTO supply_sites(id,tenant_id,site_code,name,site_type,active,created_at) VALUES(?,?,?,?,?,1,?)").run(siteId,"enterprise-1",siteId,role,siteType,now);
+      db.prepare("INSERT INTO transaction_site_links(tenant_id,transaction_id,site_id,purpose,created_by,created_at) VALUES(?,?,?,?,?,?)").run("enterprise-1","tx-1",siteId,purpose,"user-admin",now);
+      db.prepare("INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at) VALUES(?,?,?,'active',?,?,?)").run("enterprise-1","user-"+role,siteId,"user-admin",now,now);
+      grant.run("user-"+role,role,siteId,now);
+    }
     const request=(who,url="/api/v1/transactions/tx-1")=>fetch(base+url,{headers:{Authorization:"Bearer token-"+who}});
     const denied=await request("supplier");
     assert.equal(denied.status,404);
     const buyer=await (await request("buyer")).json();
     assert.equal(buyer.data.inquiryId,null);
-    const warehouse=await (await request("warehouse")).json();
-    assert.deepEqual(Object.keys(warehouse.data).sort(),["createdAt","id","status"]);
+    for(const role of ["supplier","warehouse","qc","logistics"]){
+      const response=await request(role);
+      assert.equal(response.status,200,role+" should have its explicitly assigned operational scope");
+      const body=await response.json();
+      assert.deepEqual(Object.keys(body.data).sort(),["createdAt","id","status"]);
+    }
+    const seller=await request("seller");
+    assert.equal(seller.status,200);
     const auditor=await (await request("auditor")).json();
     assert.deepEqual(Object.keys(auditor.data).sort(),["createdAt","id","status"]);
     assert.equal((await request("admin")).status,200);
