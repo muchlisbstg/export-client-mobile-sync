@@ -169,7 +169,7 @@ test("P0 handover and evidence enforce both site boundaries and active assignmen
     for (const [user, memberRole, enterpriseRole] of [
       ["hx-admin", "seller_admin", "enterprise_admin"],
       ["hx-source-only", "seller_member", "logistics"],
-      ["hx-destination-only", "seller_member", "warehouse"],
+      ["hx-destination-only", "seller_member", "logistics"],
       ["hx-revoked", "seller_member", "warehouse"],
     ]) {
       membership.run("hx-enterprise", user, memberRole, now);
