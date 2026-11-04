@@ -1,0 +1,43 @@
+name: P0 Schema Reconciliation Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/inspect-transaction-authorization-schema.mjs"
+      - "scripts/migrate-tenant-isolation.mjs"
+      - "server/supply-chain.mjs"
+      - "test/schema-reconciliation-contract.test.mjs"
+      - ".github/workflows/p0-schema-reconciliation.yml"
+      - "docs/p0-schema-reconciliation-remediation.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-schema-reconciliation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  schema-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify read-only schema contract
+        run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test test/schema-reconciliation-contract.test.mjs
+
+      - name: Run tenant and supply-chain regression tests
+        run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test test/tenant-migration.test.mjs test/enterprise-bootstrap.test.mjs test/supply-chain.test.mjs test/transaction-authorization.test.mjs
