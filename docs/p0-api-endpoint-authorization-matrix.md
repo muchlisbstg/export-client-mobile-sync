@@ -50,7 +50,7 @@ The inventory above contains 29 unique method/path pairs. Route registrations ma
 5. **Transaction boundary:** buyer/seller party membership, explicit transaction assignment, operational site link, role mismatch, missing/revoked assignment, and cross-transaction IDs.
 6. **Mutation integrity:** denied requests do not create or mutate lots, inspections, stock movements, inventory entries, handovers, or evidence.
 7. **Audit fail-closed:** protected mutations do not report success if mandatory audit persistence fails; append-only audit invariants remain intact.
-8. **CORS preflight:** configured origins can preflight GET, POST, PATCH, and DELETE with Authorization/Content-Type headers; unconfigured origins remain 403.
+8. **CORS preflight:** configured origins can preflight GET, POST, PATCH, and DELETE with Authorization, Content-Type, Idempotency-Key, X-Active-Tenant-Id, and X-Request-Id; unconfigured origins remain 403.
 9. **Public contract:** public routes remain explicitly public, rate-limited and validated; health stays minimal; retired routes remain 410.
 
 ## Existing test coverage (source inventory)
