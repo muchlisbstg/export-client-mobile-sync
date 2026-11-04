@@ -60,3 +60,24 @@ The experiment must remain on this dependency branch and be reverted if SDK CLI,
 - The current advisory findings remain open pending a fresh audit and compatibility experiment.
 - No Expo downgrade or force-fix is approved.
 - Reviewer sign-off is pending; no reviewer has been appointed.
+
+
+## Isolated override experiment — 2026-11-04
+
+An ephemeral GitHub Actions experiment was run from branch `experiment/expo58-glob-minimatch-overrides` at commit `cd8aa797d3543e5b1ffca0db46b28ad1330abcc0`. The experiment changed dependency overrides only inside the CI runner; it did not commit changes to the dependency PR's `package.json` or `package-lock.json`.
+
+| Package | Baseline resolved | Isolated candidate | Advisory fixed threshold |
+|---|---:|---:|---:|
+| `glob` | 13.0.6 | 14.0.3 | 14.0.2 |
+| `minimatch` | 10.2.6 | 11.0.4 | 11.0.1 |
+
+Audit results from the exact experiment artifact:
+
+| Audit scope | Baseline | Candidate |
+|---|---:|---:|
+| Full tree | 5 moderate; 0 high/critical | 0 advisories |
+| Production-only | 5 moderate; 0 high/critical | 0 advisories |
+
+The candidate retained Expo `58.0.23`, `@expo/cli` `58.1.19`, and `@expo/fingerprint` `0.21.9`; only the resolved glob/minimatch transitive versions moved. CI compatibility checks completed successfully: 107/107 tests, TypeScript typecheck, `npx expo install --check`, and Android JavaScript bundle export. The evidence artifact is available from [experiment run 41782625947](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41782625947).
+
+A follow-up experiment run adds iOS and Android native prebuild generation checks to the ephemeral runner. These results are pending. This is not yet sufficient evidence for adopting overrides: native compilation, simulator/device runtime, and full end-to-end validation must also pass. Do not merge the overrides or modify the committed lockfile until the follow-up checks and independent dependency review are complete.
