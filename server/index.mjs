@@ -417,12 +417,16 @@ export function createServer(options = {}) {
   app.post("/api/v1/sync/inquiries", (req, res) => {
     if (!secret) return res.status(503).json({ error: "sync_disabled" });
     if (!sameSecret(req.get("authorization"), secret)) return res.status(401).json({ error: "unauthorized" });
-    const declaredPeerId = req.body && typeof req.body === "object" ? req.body.originNodeId : "";
-    const headerPeerId = req.get("x-sync-peer");
-    const peerNodeId = headerPeerId || declaredPeerId;
-    if (peers.length && !peers.some((peer) => peer.nodeId === peerNodeId)) {
+    if (peers.length === 0) return res.status(503).json({ error: "sync_peer_allowlist_not_configured" });
+    const headerPeerId = String(req.get("x-sync-peer") ?? "").trim();
+    if (!/^[A-Za-z0-9._-]{1,80}$/.test(headerPeerId)) {
+      return res.status(401).json({ error: "sync_peer_identity_required" });
+    }
+    if (!peers.some((peer) => peer.nodeId === headerPeerId)) {
       return res.status(403).json({ error: "sync_peer_not_configured" });
     }
+    // x-sync-peer identifies the immediate authenticated sender. originNodeId is
+    // immutable record provenance and may refer to an upstream node in a relay.
     if (!validRecord(req.body)) return res.status(400).json({ error: "invalid_sync_record" });
     const result = receiveRecord(req.body, peerNodeId);
     if (result.result === "product_not_found") return res.status(404).json({ error: "product_not_found" });
