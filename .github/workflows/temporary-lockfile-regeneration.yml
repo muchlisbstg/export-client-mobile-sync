@@ -1,0 +1,66 @@
+name: Temporary lockfile regeneration runner
+
+on:
+  push:
+    branches:
+      - automation/regenerate-lockfile-runner
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-lockfile-regeneration
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout runner branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Regenerate lockfile and verify clean install
+        shell: bash
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          lockfile_sha_generated=$(sha256sum package-lock.json | cut -d' ' -f1)
+          npm ci
+          lockfile_sha_after_ci=$(sha256sum package-lock.json | cut -d' ' -f1)
+          test "$lockfile_sha_generated" = "$lockfile_sha_after_ci"
+          printf 'generated_lockfile_sha256=%s\n' "$lockfile_sha_generated" >> "$GITHUB_STEP_SUMMARY"
+      - name: Commit only package-lock.json to approved fix branch
+        shell: bash
+        env:
+          TARGET_BRANCH: fix/mobile-lockfile-sync
+        run: |
+          cp package-lock.json /tmp/package-lock.generated.json
+          git fetch origin "$TARGET_BRANCH"
+          git switch --detach "origin/$TARGET_BRANCH"
+          cp /tmp/package-lock.generated.json package-lock.json
+          git add -- package-lock.json
+          changed_files=$(git diff --cached --name-only)
+          test "$changed_files" = "package-lock.json"
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "Generated lockfile is identical; no commit required."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(deps): synchronize Expo dependency lockfile"
+          test "$(git diff-tree --no- no-commit-id --name-only -r HEAD | tr '\n' ' ')" = "package-lock.json "
+          git push origin HEAD:"refs/heads/$TARGET_BRANCH"
+      - name: Upload generated lockfile evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-lockfile-regeneration-evidence
+          path: |
+            package-lock.json
+          retention-days: 7
