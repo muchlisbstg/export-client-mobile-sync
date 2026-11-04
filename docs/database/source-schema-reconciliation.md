@@ -66,6 +66,10 @@ The in-memory, synthetic contract test `test/schema-reconciliation-contract.test
 
 These are schema-integrity blockers, not authorization-test failures. Application-layer checks reduce exposure but do not replace relational constraints. Do not generate or apply SQL until Security and Database reviewers approve the intended buyer/seller ownership model and the composite-key design.
 
+## Source-contract test gate
+
+The repository's `test/schema-reconciliation-contract.test.mjs` exercises the inspector against an in-memory synthetic database and asserts that inspection itself is read-only. The dedicated schema contract workflow is configured to run on this isolated branch. A passing test confirms the expected source-level blocker inventory; it does not prove the deployed physical database matches the source model.
+
 ## Reconciliation outcome
 
 - **Completed:** source DDL inventory, declared relationship map, key quantity/identifier semantics, trigger/index inventory, and source-level contract blockers.
