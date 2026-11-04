@@ -308,7 +308,11 @@ export function createSupplyChainService(db) {
     const {tenantId,lotId,siteId,inspectionType,result,actorId}=input;
     if(!["receiving","grading","processing","pre_dispatch","port_gate","laboratory","other"].includes(inspectionType)||!["pending","pass","conditional_pass","fail","hold"].includes(result)) throw new SupplyChainError(400,"invalid_inspection");
     return inTxn(()=>{
-      requireSite(tenantId,siteId); const l=requireLot(tenantId,lotId);
+      requireSite(tenantId,siteId);
+      const l=requireLot(tenantId,lotId);
+      if (balance.get(tenantId,lotId,siteId).quantityMilli <= 0) {
+        throw new SupplyChainError(403,"lot_site_mismatch");
+      }
       const inspectionId=id(),time=now();
       db.prepare("INSERT INTO quality_inspections(id,tenant_id,lot_id,site_id,inspection_type,result,inspected_at,inspector_id,criteria_json,findings,corrective_action,evidence_ref,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
         .run(inspectionId,tenantId,lotId,siteId,inspectionType,result,time,actorId,JSON.stringify(input.criteria??{}),input.findings??null,input.correctiveAction??null,input.evidenceRef??null,time);
@@ -377,7 +381,11 @@ export function createSupplyChainService(db) {
       COALESCE(SUM(CASE WHEN m.status='posted' THEN e.quantity_milli_delta ELSE 0 END),0) AS quantityMilli
       FROM supply_lots l LEFT JOIN inventory_entries e ON e.tenant_id=l.tenant_id AND e.lot_id=l.id AND e.site_id=?
       LEFT JOIN inventory_movements m ON m.tenant_id=e.tenant_id AND m.id=e.movement_id
-      WHERE l.tenant_id=? GROUP BY l.id ORDER BY l.lot_code`).all(input.siteId,input.tenantId);
+      WHERE l.tenant_id=? AND EXISTS (
+        SELECT 1 FROM inventory_entries scoped_e
+        JOIN inventory_movements scoped_m ON scoped_m.tenant_id=scoped_e.tenant_id AND scoped_m.id=scoped_e.movement_id
+        WHERE scoped_e.tenant_id=l.tenant_id AND scoped_e.lot_id=l.id AND scoped_e.site_id=? AND scoped_m.status='posted'
+      ) GROUP BY l.id ORDER BY l.lot_code`).all(input.siteId,input.tenantId,input.siteId);
   }
   function addEvidence(input) {
     const {tenantId,entityType,entityId,evidenceType,storageUri,actorId}=input;
