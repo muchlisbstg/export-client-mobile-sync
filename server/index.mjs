@@ -425,6 +425,7 @@ export function createServer(options = {}) {
     if (!peers.some((peer) => peer.nodeId === headerPeerId)) {
       return res.status(403).json({ error: "sync_peer_not_configured" });
     }
+    const peerNodeId = headerPeerId;
     // x-sync-peer identifies the immediate authenticated sender. originNodeId is
     // immutable record provenance and may refer to an upstream node in a relay.
     if (!validRecord(req.body)) return res.status(400).json({ error: "invalid_sync_record" });
