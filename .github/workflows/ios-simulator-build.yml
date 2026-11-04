@@ -106,7 +106,7 @@ jobs:
             const data = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
             const device = Object.values(data.devices).flat().find((item) => item.isAvailable && /^iPhone/.test(item.name));
             if (!device) process.exit(2);
-            process.stdout.write([device.udid, device.name, device.state].join("\\n") + "\\n");
+            process.stdout.write([device.udid, device.name, device.state].join("\n") + "\n");
           ' "$EVIDENCE_DIR/devices.json" > "$EVIDENCE_DIR/device-selection.txt"
 
           DEVICE_ID="$(sed -n '1p' "$EVIDENCE_DIR/device-selection.txt")"
@@ -121,8 +121,8 @@ jobs:
           xcrun simctl get_app_container "$DEVICE_ID" "$BUNDLE_ID" app > "$EVIDENCE_DIR/app-container.txt"
 
           LAUNCH_OUTPUT="$(xcrun simctl launch --terminate-running-process "$DEVICE_ID" "$BUNDLE_ID")"
-          printf '%s\\n' "$LAUNCH_OUTPUT" | tee "$EVIDENCE_DIR/launch-output.txt"
-          APP_PID="$(printf '%s\\n' "$LAUNCH_OUTPUT" | sed -nE 's/.*: ([0-9]+)$/\\1/p' | tail -n 1)"
+          printf '%s\n' "$LAUNCH_OUTPUT" | tee "$EVIDENCE_DIR/launch-output.txt"
+          APP_PID="$(printf '%s\\n' "$LAUNCH_OUTPUT" | sed -nE 's/.*: ([0-9]+)$/\1/p' | tail -n 1)"
           test -n "$APP_PID"
           sleep 8
           kill -0 "$APP_PID"
