@@ -62,7 +62,6 @@ async function fixture() {
   const assign = db.prepare("INSERT INTO supply_site_assignments(tenant_id,user_id,site_id,status,granted_by,created_at,updated_at) VALUES('ent-1',?,?,?, 'p0-admin',?,?)");
   assign.run(users.supplier, "supplier-site", "active", now, now);
   assign.run(users.warehouse, "warehouse-site", "active", now, now);
-  assign.run(users.buyer, "buyer-site", "active", now, now).catch?.(() => {});
   // Buyer visibility uses a buyer-typed site in this enterprise.
   addSite.run("buyer-site", "ent-1", "BUY-1", "Buyer Site", "buyer", 1, now);
   assign.run(users.buyer, "buyer-site", "active", now, now);
