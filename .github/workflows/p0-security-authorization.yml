@@ -6,6 +6,9 @@ on:
     paths:
       - "server/**"
       - "test/security-authorization-remediation.test.mjs"
+      - "test/p0-health-cors-contract.test.mjs"
+      - "test/p0-role-enterprise-site.test.mjs"
+      - "docs/security/endpoint-authorization-matrix.md"
       - ".github/workflows/p0-security-authorization.yml"
   pull_request:
     branches: [main]
