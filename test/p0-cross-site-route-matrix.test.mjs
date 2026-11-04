@@ -226,7 +226,8 @@ test("P0 handover and evidence enforce both site boundaries and active assignmen
     const revokedRead = await call("revoked", `/api/v1/supply/stock?siteId=${encodeURIComponent(source.id)}`);
     assert.equal(revokedRead.status, 403, "revoked assignment must not retain site access");
 
-    grant.run("hx-revoked", source.id, now, now);
+    db.prepare("UPDATE supply_site_assignments SET status='active',updated_at=? WHERE tenant_id=? AND user_id=? AND site_id=?")
+      .run(now,"hx-enterprise","hx-revoked",source.id);
     db.prepare("UPDATE supply_sites SET active=0 WHERE tenant_id=? AND id=?").run("hx-enterprise", source.id);
     const inactiveRead = await call("revoked", `/api/v1/supply/stock?siteId=${encodeURIComponent(source.id)}`);
     assert.equal(inactiveRead.status, 403, "deactivated site must deny access even with active assignment");
