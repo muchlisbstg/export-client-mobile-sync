@@ -20,6 +20,7 @@ test("SEC-03 transaction reads require explicit assignment, role and site scope;
     const member=db.prepare("INSERT INTO tenant_memberships(tenant_id,user_id,role,created_at) VALUES('enterprise-1',?,?,?)");
     const role=db.prepare("INSERT INTO enterprise_role_assignments(enterprise_id,user_id,role,created_at) VALUES('enterprise-1',?,?,?)");
     for(const [key,user] of Object.entries(ids)){member.run(user,key==="buyer"?"buyer_member":"seller_member",now);role.run(user,key==="admin"?"enterprise_admin":key,now);}
+    member.run("user-unassigned","buyer_member",now);role.run("user-unassigned","buyer",now);ids.unassigned="user-unassigned";
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('buyer-side','buyer','Buyer Side',?)").run(now);
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('seller-side','seller','Seller Side',?)").run(now);
     db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES('tx-1','buyer-side','enterprise-1','pending',?)").run(now);
@@ -33,7 +34,7 @@ test("SEC-03 transaction reads require explicit assignment, role and site scope;
       grant.run("user-"+role,role,siteId,now);
     }
     const request=(who,url="/api/v1/transactions/tx-1")=>fetch(base+url,{headers:{Authorization:"Bearer token-"+who}});
-    const denied=await request("supplier");
+    const denied=await request("unassigned");
     assert.equal(denied.status,404);
     const buyer=await (await request("buyer")).json();
     assert.equal(buyer.data.inquiryId,null);
