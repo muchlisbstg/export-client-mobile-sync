@@ -1,6 +1,8 @@
 name: iOS Simulator Build
 
 on:
+  push:
+    branches: ["release-readiness/**"]
   pull_request:
     paths:
       - "app.json"
