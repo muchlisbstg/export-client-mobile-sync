@@ -2,7 +2,7 @@ name: Expo Web Build
 
 on:
   push:
-    branches: [feat/expo-web]
+    branches: [feat/expo-web, "release-readiness/**"]
   pull_request:
     branches: [main]
 
