@@ -12,6 +12,9 @@ const users = {
   warehouse: "p0-warehouse",
   qc: "p0-qc",
   buyer: "p0-buyer",
+  seller: "p0-seller",
+  logistics: "p0-logistics",
+  auditor: "p0-auditor",
   noRole: "p0-no-role",
   suspended: "p0-suspended",
   unassigned: "p0-unassigned",
@@ -48,7 +51,7 @@ async function fixture() {
     membership.run(userId, token === "buyer" ? "seller_member" : "seller_member", token === "suspended" ? "suspended" : "active", now);
   }
   for (const [token, userId] of Object.entries(users)) {
-    const assignedRole = ({admin:"enterprise_admin",supplier:"supplier",warehouse:"warehouse",qc:"qc",buyer:"buyer",unassigned:"supplier",suspended:"supplier"})[token];
+    const assignedRole = ({admin:"enterprise_admin",supplier:"supplier",warehouse:"warehouse",qc:"qc",buyer:"buyer",seller:"seller",logistics:"logistics",auditor:"auditor",unassigned:"supplier",suspended:"supplier"})[token];
     if (assignedRole) role.run(userId, assignedRole, "active", now);
   }
 
@@ -179,6 +182,67 @@ test("P0 site assignment grant requires an active enterprise member and a site-c
     assert.deepEqual((await valid.json()).data, {
       tenantId: "ent-1", userId: users.supplier, siteId: "supplier-site", status: "active",
     });
+  } finally {
+    await app.close();
+  }
+});
+
+
+test("P0 complete role-denial matrix covers every protected supply-chain and transaction read/mutation route", async () => {
+  const app = await fixture();
+  try {
+    const roleTokens = ["admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"];
+    const matrix = [
+      { method:"POST", route:"/api/v1/supply/sites", allowed:["admin"], body:{siteCode:"MATRIX-SITE",name:"Matrix Site",siteType:"warehouse",countryCode:"ID"} },
+      { method:"POST", route:"/api/v1/supply/sites/supplier-site/assignments", allowed:["admin"], body:{userId:users.supplier} },
+      { method:"DELETE", route:"/api/v1/supply/sites/supplier-site/assignments/p0-supplier", allowed:["admin"] },
+      { method:"POST", route:"/api/v1/supply/lots", allowed:["admin","supplier","warehouse"], body:{siteId:"supplier-site",lotCode:"MATRIX-LOT",commodityName:"Synthetic coffee",quantityMilli:1000,unit:"kg"} },
+      { method:"POST", route:"/api/v1/supply/lots/matrix-lot/inspections", allowed:["admin","qc"], body:{siteId:"supplier-site",inspectionType:"receiving",result:"pass"} },
+      { method:"POST", route:"/api/v1/supply/processing", allowed:["admin","warehouse"], body:{siteId:"warehouse-site",inputs:[],outputs:[]} },
+      { method:"POST", route:"/api/v1/supply/movements", allowed:["admin","warehouse","logistics"], body:{lotId:"matrix-lot",fromSiteId:"warehouse-site",toSiteId:"supplier-site",quantityMilli:100,unit:"kg"} },
+      { method:"GET", route:"/api/v1/supply/stock?siteId=supplier-site", allowed:["admin","buyer","warehouse","qc","logistics","auditor"] },
+      { method:"GET", route:"/api/v1/supply/lots/matrix-lot/trace", allowed:["admin","buyer","seller","warehouse","qc","logistics","auditor"] },
+      { method:"POST", route:"/api/v1/supply/handovers", allowed:["admin","warehouse","logistics"], body:{lotId:"matrix-lot",fromSiteId:"warehouse-site",toSiteId:"supplier-site",quantityMilli:100,unit:"kg",handoverCode:"MATRIX-HO"} },
+      { method:"POST", route:"/api/v1/supply/handovers/matrix-handover/dispatch", allowed:["admin","logistics"], body:{} },
+      { method:"POST", route:"/api/v1/supply/handovers/matrix-handover/receive", allowed:["admin","warehouse","logistics","qc"], body:{receivedQuantityMilli:100} },
+      { method:"POST", route:"/api/v1/transactions/matrix-tx/access-assignments", allowed:["admin"], body:{userId:users.supplier,role:"supplier",siteId:"supplier-site"} },
+      { method:"DELETE", route:"/api/v1/transactions/matrix-tx/access-assignments/p0-supplier/supplier", allowed:["admin"] },
+      { method:"POST", route:"/api/v1/transactions/matrix-tx/site-links", allowed:["admin"], body:{siteId:"supplier-site",purpose:"supplier_fulfilment"} },
+    ];
+    let assertions = 0;
+    for (const item of matrix) {
+      for (const role of roleTokens.filter((candidate) => !item.allowed.includes(candidate))) {
+        const response = await request(app, role, item.method, item.route, item.body);
+        assert.equal(response.status, 403, `${role} must be denied: ${item.method} ${item.route}; got ${response.status}: ${await response.clone().text()}`);
+        assertions += 1;
+      }
+    }
+    assert.ok(assertions >= 65, `expected broad role-denial coverage, got ${assertions} assertions`);
+  } finally {
+    await app.close();
+  }
+});
+
+test("P0 evidence entity role matrix denies roles outside each entity's server-side policy", async () => {
+  const app = await fixture();
+  try {
+    const allRoles = ["admin","buyer","seller","supplier","warehouse","qc","logistics","auditor"];
+    const matrix = [
+      { entityType:"lot", allowed:["admin","supplier","warehouse"] },
+      { entityType:"inspection", allowed:["admin","qc"] },
+      { entityType:"movement", allowed:["admin","warehouse","logistics"] },
+      { entityType:"handover", allowed:["admin","warehouse","logistics"] },
+    ];
+    for (const item of matrix) {
+      for (const role of allRoles) {
+        const response = await request(app, role, "POST", "/api/v1/supply/evidence", {
+          entityType:item.entityType,entityId:"missing-synthetic-entity",evidenceType:"matrix-test",
+          storageUri:"storage://synthetic/matrix-evidence",
+        });
+        const expected = item.allowed.includes(role) ? 404 : 403;
+        assert.equal(response.status, expected, `${role} evidence policy for ${item.entityType}: expected ${expected}, got ${response.status}: ${await response.clone().text()}`);
+      }
+    }
   } finally {
     await app.close();
   }
