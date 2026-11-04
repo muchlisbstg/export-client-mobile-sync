@@ -152,7 +152,6 @@ export function createServer(options = {}) {
     "idempotency-key",
     "x-active-tenant-id",
     "x-request-id",
-    "x-sync-peer",
   ]);
   app.use((req, res, next) => {
     const origin = req.get("origin");
@@ -181,7 +180,6 @@ export function createServer(options = {}) {
         "Idempotency-Key",
         "X-Active-Tenant-Id",
         "X-Request-Id",
-        "X-Sync-Peer",
       ].join(", "));
       res.setHeader("Access-Control-Max-Age", "600");
       return res.sendStatus(204);
