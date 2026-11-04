@@ -2,14 +2,14 @@
 
 **Status:** Technical pre-review; P0 remains OPEN  
 **Repository:** `muchlisbstg/export-client-mobile-sync`  
-**Baseline main SHA:** `3c1140e04aaaa79be79351a2b043fd678fb86866`  
-**Work branch:** `security/p0-authorization-remediation`  
-**Reviewers:** Not appointed; no independent approval recorded  
+**Baseline main SHA:** `73e75edad71c5a6f8819e80c5ffdeabf32314c3d`  
+**Work branch:** `release-readiness/p0-expo58-schema-blueprint-2026-11-04`  
+**Reviewers:** Security and Database reviewers still require explicit appointment/approval  
 **Scope:** API authentication, single-enterprise membership, enterprise roles, site scope, transaction assignment boundaries
 
 ## Governance
 
-- No merge, deployment, staging mutation, SQL migration, or production action is authorized by this evidence pack.
+- This evidence pack authorizes no additional merge, deployment, staging mutation, SQL migration, or production action. PRs #114 and #115 were already merged into `main` before this branch was created; this work does not reverse those repository events.
 - Tests in this document are synthetic and must not use operational database data.
 - Passing automated tests does not replace independent Security and Database review.
 - P0 remains open until the complete endpoint matrix, negative tests, runtime evidence, and independent approval are accepted.
@@ -73,20 +73,23 @@ New branch remediation:
 
 ### SEC-P0-HEALTH-CONTRACT-02 — Public health contract mismatch
 
-**Evidence:** Server intentionally returns only `{status:"ok"}`; `src/api-core.ts` currently models `ApiHealth` with `nodeId`, `syncEnabled`, and `syncStatus`, and `getHealth()` requires `syncStatus`.  
-**Impact:** Client sync-status panel cannot rely on public health response; it may show unavailable status despite a healthy server.  
-**Recommendation:** Keep public health minimal. Add a separately authenticated sync-status route or decouple liveness from authenticated operational status. Not changed in this commit.
+**Evidence:** Server returns only `{status:"ok"}` by design; the previous client contract required `nodeId`, `syncEnabled`, and `syncStatus`.  
+**Impact:** The client could show a healthy API as unavailable and encouraged operational sync details to be placed on a public endpoint.  
+**Remediation in current branch:** Client health type and UI now match the minimal liveness contract; the UI no longer requests or displays peer topology, queue depth, retry counts, or conflict counts. `test/p0-health-cors-contract.test.mjs` and `test/api.test.mjs` cover the contract.  
+**Verification:** Awaiting CI on the current branch SHA.
 
-### SEC-P0-CORS-HEADERS-03 — Browser preflight header coverage
+### SEC-P0-CORS-HEADERS-03 — Browser preflight method/header coverage
 
-**Evidence:** Current CORS allowlist is `Content-Type, Authorization`; application routes use `Idempotency-Key` and may use request/tenant correlation headers.  
-**Impact:** Browser clients may fail preflight when sending these headers.  
-**Recommendation:** Confirm actual browser request headers and add only required headers after tests. Not changed in this commit.
+**Evidence:** API routes include `PATCH` and `DELETE`; enterprise context middleware reads `X-Active-Tenant-Id`. The previous CORS policy allowed only `GET, POST, OPTIONS` and `Content-Type, Authorization`.  
+**Impact:** Browser preflight for supported mutation methods or explicit enterprise context could fail before reaching authorization middleware.  
+**Remediation in current branch:** CORS now allows only the configured origin, methods `GET, POST, PATCH, DELETE, OPTIONS`, and headers `Content-Type, Authorization, X-Active-Tenant-Id`. No wildcard origin or credentialed-cookie access is introduced.  
+**Verification:** Synthetic preflight tests cover allowed methods/headers and untrusted-origin denial; CI pending.
 
 ### SEC-P0-ASSIGNMENT-ROLE-04 — Transaction/site assignment lifecycle
 
 **Evidence:** Transaction access assignment handler validates target active role grant and transaction/site link; site assignment handler now validates membership and compatible role.  
-**Open review:** Validate concurrent revocation, stale assignment cleanup, role changes after grant, and whether read paths consistently re-check current role/site assignments.
+**Remediation/test in current branch:** Added a synthetic regression asserting site-assignment revocation and enterprise-role revocation deny the next request. Existing transaction read paths re-check active access and site assignments.  
+**Open review:** Independent reviewer must still assess concurrency/race windows, stale assignment cleanup, and audit failure behavior.
 
 ## Required reviewer checks
 
@@ -103,11 +106,11 @@ New branch remediation:
 | Evidence | Status |
 |---|---|
 | Baseline SHA and branch ancestry | Verified |
-| Endpoint inventory from route registrations | Prepared |
+| Endpoint inventory from route registrations | Documented in `docs/security/endpoint-authorization-matrix.md`; duplicate transaction route declarations flagged |
 | Existing authorization test inventory | Verified by source inspection |
 | New site-assignment remediation | Committed to isolated branch |
-| New negative/positive test cases | Committed; execution pending |
-| GitHub CI test result for remediation commit | Not yet available; current combined status only shows Vercel success |
+| New negative/positive test cases | Committed; current branch CI pending |
+| Prior P0 authorization CI | Run `41782702454` passed on PR head `2e3f082`; latest Mobile CI on main `73e75ed` passed run `41782801995` |
 | Independent Security review | Pending; reviewer not appointed |
 | Database review / migration approval | Pending; no migration created or applied |
-| P0 closure | OPEN |
+| P0 closure | OPEN — current branch CI and independent Security/Database approvals still required |
