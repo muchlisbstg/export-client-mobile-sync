@@ -75,6 +75,10 @@ This matrix is derived from route registration in `server/index.mjs` and `server
 
 The source currently contains duplicate GET registrations for `/api/v1/transactions` and `/api/v1/transactions/:id`: the assignment-aware handlers are registered by `registerSupplyChainRoutes` before older broad handlers in `server/index.mjs`. The first handlers terminate the request, so the later handlers are shadowed in the current registration order. This should be removed in a follow-up cleanup to avoid order-dependent route ambiguity; it is not counted as a second API contract.
 
+## Current branch validation scope
+
+The release-readiness branch includes a dedicated synthetic health/CORS suite and an immediate role/site revocation regression. The P0 Security, complete authorization matrix, and schema contract workflows are configured to run on pushes to this isolated branch. Their results must be evaluated against the final branch SHA, not inherited from older PR runs.
+
 ## Verification status
 
 - Missing, invalid, and expired bearer tests cover the protected method/path matrix.
