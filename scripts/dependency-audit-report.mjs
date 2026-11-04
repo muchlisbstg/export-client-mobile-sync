@@ -12,6 +12,7 @@ function readAudit(path) {
 }
 const full = readAudit(fullPath);
 const production = readAudit(productionPath);
+const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
 const severities = ["critical", "high", "moderate", "low", "info"];
 const counts = full.metadata?.vulnerabilities ?? {};
 const prodCounts = production.metadata?.vulnerabilities ?? {};
@@ -41,6 +42,7 @@ if (!entries.length) {
 } else {
   for (const [name, item] of entries) {
     const via = (item.via ?? []).map((v) => typeof v === "string" ? v : (v.title ?? v.name ?? "Advisory") + " (CVE: " + (v.cve ?? "not assigned") + "; range: " + (v.range ?? "not specified") + "; URL: " + (v.url ?? "not provided") + ")");
+    const resolved = (item.nodes ?? []).map((nodePath) => nodePath + "@" + (lock.packages?.[nodePath]?.version ?? "version-not-in-lockfile"));
     const fix = item.fixAvailable === true ? "Automated fix reported available" :
       item.fixAvailable === false ? "No automated fix reported" :
       item.fixAvailable ? "Fix reported: " + JSON.stringify(item.fixAvailable) : "Fix availability not reported";
@@ -49,7 +51,7 @@ if (!entries.length) {
       "- Severity: **" + (item.severity ?? "unknown") + "**",
       "- Direct dependency: " + (item.isDirect ? "yes" : "no (transitive)"),
       "- Affected range: " + (item.range ?? "not reported"),
-      "- Installed versions: " + ((item.nodes ?? []).join(", ") || "not reported"),
+      "- Resolved package versions: " + (resolved.join(", ") || "not reported"),
       "- Remediation: " + fix,
       "- Advisory chain: " + (via.join("; ") || "not reported"),
       "- Dependents: " + ((item.effects ?? []).join(", ") || "none listed"),
@@ -59,6 +61,7 @@ if (!entries.length) {
 }
 lines.push(
   "## Risk assessment and remediation policy", "",
+  "- The npm resolver currently suggests Expo 53.0.11 as the fix for several findings while this project is on Expo SDK 58. Treat that as a major-version downgrade suggestion, not an approved fix; do not apply automatically. Confirm advisory fixed versions and SDK compatibility before any remediation.",
   "1. Prioritize **critical** and **high** findings, especially packages reachable from production dependency paths.",
   "2. For each finding, confirm the vulnerable version range, reachable code path, runtime exposure, and first patched version from the linked advisory before upgrading.",
   "3. Prefer the smallest compatible patch/minor update; regenerate the lockfile in an isolated branch and run unit, type, Expo compatibility, Android, iOS, and three-backend interoperability checks.",

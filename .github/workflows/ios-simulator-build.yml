@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -56,7 +56,7 @@ jobs:
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme ExportClient \
-            -configuration Debug \
+            -configuration Release \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath ios/DerivedData \
@@ -67,8 +67,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="ios/DerivedData/Build/Products/Debug-iphonesimulator/ExportClient.app"
+          APP_PATH="ios/DerivedData/Build/Products/Release-iphonesimulator/ExportClient.app"
           test -d "$APP_PATH"
+          test -s "$APP_PATH/main.jsbundle"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist" | grep -Fx 'com.muchlisbstg.exportclient'
           /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist" | grep -Fx 'ExportClient'
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" ios-simulator-app.zip
@@ -79,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="ios/DerivedData/Build/Products/Debug-iphonesimulator/ExportClient.app"
+          APP_PATH="ios/DerivedData/Build/Products/Release-iphonesimulator/ExportClient.app"
           BUNDLE_ID="com.muchlisbstg.exportclient"
           EVIDENCE_DIR="ios-simulator-smoke-evidence"
           mkdir -p "$EVIDENCE_DIR"
@@ -122,11 +123,28 @@ jobs:
 
           LAUNCH_OUTPUT="$(xcrun simctl launch --terminate-running-process "$DEVICE_ID" "$BUNDLE_ID")"
           printf '%s\n' "$LAUNCH_OUTPUT" | tee "$EVIDENCE_DIR/launch-output.txt"
-          APP_PID="$(printf '%s\\n' "$LAUNCH_OUTPUT" | sed -nE 's/.*: ([0-9]+)$/\1/p' | tail -n 1)"
+          APP_PID="$(printf '%s\n' "$LAUNCH_OUTPUT" | sed -nE 's/.*: ([0-9]+)$/\1/p' | tail -n 1)"
           test -n "$APP_PID"
           sleep 8
           kill -0 "$APP_PID"
           xcrun simctl io "$DEVICE_ID" screenshot "$EVIDENCE_DIR/simulator-screenshot.png"
+          cat > "$EVIDENCE_DIR/verify-screen.swift" <<'SWIFT'
+          import AppKit
+          import Vision
+          let imageURL = URL(fileURLWithPath: CommandLine.arguments[1])
+          let request = VNRecognizeTextRequest()
+          request.recognitionLevel = .accurate
+          try VNImageRequestHandler(url: imageURL).perform([request])
+          let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+          print(lines.joined(separator: "\n"))
+          if lines.contains(where: {
+            $0.localizedCaseInsensitiveContains("No script URL provided") ||
+            $0.contains("unsanitizedScriptURLString")
+          }) {
+            fatalError("React Native fatal bundle-loading overlay detected")
+          }
+          SWIFT
+          swift "$EVIDENCE_DIR/verify-screen.swift" "$EVIDENCE_DIR/simulator-screenshot.png" | tee "$EVIDENCE_DIR/screen-ocr.txt"
           {
             echo "device_name=$DEVICE_NAME"
             echo "device_udid=$DEVICE_ID"
