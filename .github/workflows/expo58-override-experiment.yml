@@ -1,0 +1,93 @@
+name: Expo SDK 58 Isolated Override Experiment
+
+on:
+  push:
+    branches:
+      - experiment/expo58-glob-minimatch-overrides
+    paths:
+      - ".github/workflows/expo58-override-experiment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-override-experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout experiment branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install baseline lockfile
+        run: npm ci
+
+      - name: Capture baseline dependency audit
+        shell: bash
+        run: |
+          mkdir -p experiment-artifacts/baseline
+          set +e
+          npm audit --json > experiment-artifacts/baseline/npm-audit-full.json
+          echo "full_exit_code=$?" >> "$GITHUB_STEP_SUMMARY"
+          npm audit --omit=dev --json > experiment-artifacts/baseline/npm-audit-production.json
+          echo "production_exit_code=$?" >> "$GITHUB_STEP_SUMMARY"
+          set -e
+          npm ls glob minimatch --all > experiment-artifacts/baseline/dependency-tree.txt 2>&1 || true
+
+      - name: Apply temporary patched transitive dependency overrides
+        run: |
+          npm pkg set 'overrides.glob=^14.0.2' 'overrides.minimatch=^11.0.1'
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci
+
+      - name: Capture candidate dependency audit
+        shell: bash
+        run: |
+          mkdir -p experiment-artifacts/candidate
+          set +e
+          npm audit --json > experiment-artifacts/candidate/npm-audit-full.json
+          echo "candidate_full_exit_code=$?" >> "$GITHUB_STEP_SUMMARY"
+          npm audit --omit=dev --json > experiment-artifacts/candidate/npm-audit-production.json
+          echo "candidate_production_exit_code=$?" >> "$GITHUB_STEP_SUMMARY"
+          set -e
+          npm ls glob minimatch --all > experiment-artifacts/candidate/dependency-tree.txt 2>&1 || true
+          cp package.json package-lock.json experiment-artifacts/candidate/
+
+      - name: Run application compatibility checks
+        run: |
+          npm test
+          npm run typecheck
+          npx expo install --check
+          npx expo export --platform android
+
+      - name: Summarize isolated experiment
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Expo SDK 58 isolated override experiment"
+            echo
+            echo "- Branch: ${GITHUB_REF_NAME}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Overrides are applied only inside this ephemeral runner."
+            echo "- The committed package.json and package-lock.json are not modified."
+            echo "- Baseline and candidate audit JSON plus resolved dependency trees are attached as artifacts."
+            echo
+            echo "### Candidate package versions"
+            cat experiment-artifacts/candidate/dependency-tree.txt 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload isolated experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo58-override-experiment-${{ github.sha }}
+          path: experiment-artifacts/
+          if-no-files-found: warn
+          retention-days: 30
