@@ -211,6 +211,7 @@ export function registerSupplyChainRoutes(app, { db, auth, requireActiveTenant, 
     return audit(req,res,{action,outcome,entityType:"commercial_transaction",entityId:transactionId,details});
   };
   const transactionAccess = (transactionId, userId, roles, enterpriseId) => {
+    if (!db.prepare("SELECT 1 FROM commercial_transactions WHERE id=? AND (buyer_tenant_id=? OR seller_tenant_id=?)").get(transactionId,enterpriseId,enterpriseId)) return null;
     if (roles.includes("enterprise_admin")) return { role:"enterprise_admin" };
     const assignments = db.prepare(`SELECT a.role,a.site_id AS siteId
       FROM transaction_access_assignments a
