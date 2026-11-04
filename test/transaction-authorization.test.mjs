@@ -22,7 +22,7 @@ test("SEC-03 transaction reads require explicit assignment, role and site scope;
     for(const [key,user] of Object.entries(ids)){member.run(user,key==="buyer"?"buyer_member":"seller_member",now);role.run(user,key==="admin"?"enterprise_admin":key,now);}
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('buyer-side','buyer','Buyer Side',?)").run(now);
     db.prepare("INSERT INTO tenants(id,tenant_type,display_name,created_at) VALUES('seller-side','seller','Seller Side',?)").run(now);
-    db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES('tx-1','buyer-side','seller-side','pending',?)").run(now);
+    db.prepare("INSERT INTO commercial_transactions(id,buyer_tenant_id,seller_tenant_id,status,created_at) VALUES('tx-1','buyer-side','enterprise-1','pending',?)").run(now);
     const siteId="site-1";
     db.prepare("INSERT INTO supply_sites(id,tenant_id,site_code,name,site_type,active,created_at) VALUES(?,?,?,?,?,1,?)").run(siteId,"enterprise-1","WH-1","Warehouse","warehouse",now);
     db.prepare("INSERT INTO transaction_site_links(tenant_id,transaction_id,site_id,purpose,created_by,created_at) VALUES(?,?,?,?,?,?)").run("enterprise-1","tx-1",siteId,"warehouse","user-admin",now);
