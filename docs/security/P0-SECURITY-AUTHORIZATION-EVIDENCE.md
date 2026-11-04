@@ -56,10 +56,12 @@ Existing automated suites on baseline:
 - `test/security-authorization-remediation.test.mjs`: metadata forgery cannot grant admin; explicit server-side admin allowlist.
 - `test/authorization.test.mjs`: active role resolution, forged enterprise context, missing identity, revoked membership, unknown role denial.
 
-New branch remediation:
+New branch remediation and route-level coverage:
 
 - `server/supply-chain-routes.mjs`: site assignment now verifies the target has active membership in the configured enterprise and at least one active role compatible with the target site type before granting assignment.
-- `test/p0-role-enterprise-site.test.mjs`: adds negative tests for non-member, suspended member, no active role, incompatible role, plus a positive compatible assignment.
+- `test/p0-role-enterprise-site.test.mjs`: negative tests for non-member, suspended member, no active role, incompatible role, plus a positive compatible assignment.
+- `test/p0-cross-site-route-matrix.test.mjs`: synthetic route tests cover handover preparation (both source and destination), dispatch (source), receipt (destination), handover evidence source-site scope, revoked assignment, and deactivated-site denial. Denied requests assert no business-state changes to handover status, movements, inventory entries, or evidence.
+- Existing cross-site route tests continue to cover inspection, processing, stock, and lot trace denials.
 
 ## Findings
 
@@ -69,7 +71,7 @@ New branch remediation:
 **Evidence:** Previous handler checked that the site was active and the caller was enterprise_admin, but only checked that target `userId` was non-empty. It did not validate target enterprise membership or active compatible role.  
 **Impact:** Could create stale or unusable site assignments for arbitrary user IDs or users without the corresponding enterprise role. This is an authorization-integrity gap; do not describe it as confirmed privilege escalation.  
 **Remediation:** Added active membership and compatible active role checks before insert/upsert.  
-**Verification:** New synthetic negative/positive cases added; execution evidence is pending CI/runtime test run.
+**Verification:** Synthetic negative/positive cases are committed. GitHub Actions run `41782702554` completed `npm test` with 110 tests passed, 0 failed. The handover/evidence/site-lifecycle suite passed as subtest 63.
 
 ### SEC-P0-HEALTH-CONTRACT-02 — Public health contract mismatch
 
@@ -93,7 +95,7 @@ New branch remediation:
 1. Independently inspect the full route matrix and middleware ordering.
 2. Run all negative tests against an isolated synthetic SQLite fixture.
 3. Add/verify cross-enterprise and cross-site read tests for every resource endpoint, not only lot intake.
-4. Verify that role revocation and site assignment revocation take effect immediately.
+4. Verify that role revocation and site assignment revocation take effect immediately. Site-assignment revocation and deactivated-site denial are covered by the new synthetic route test; role revocation after an already-created site assignment remains an independent review item.
 5. Inspect audit failure behavior and ensure denied writes cannot commit partial mutations.
 6. Review health/CORS follow-ups and confirm no sensitive metadata is exposed.
 7. Record reviewer identity, competence, conflicts, commit SHA, findings, and explicit disposition.
@@ -106,8 +108,11 @@ New branch remediation:
 | Endpoint inventory from route registrations | Prepared |
 | Existing authorization test inventory | Verified by source inspection |
 | New site-assignment remediation | Committed to isolated branch |
-| New negative/positive test cases | Committed; execution pending |
-| GitHub CI test result for remediation commit | Not yet available; current combined status only shows Vercel success |
+| New negative/positive test cases | Committed and passed on synthetic fixture |
+| Cross-site handover source/destination | Passed: preparation checks both sites; dispatch checks source; receipt checks destination |
+| Handover evidence site scope | Passed: destination-only assignment cannot attach evidence to source-site handover |
+| Revoked assignment / deactivated site | Passed: both return 403 after lifecycle change |
+| GitHub CI test result | 110/110 tests passed, 0 failed on run [41782702554](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/41782702554) |
 | Independent Security review | Pending; reviewer not appointed |
 | Database review / migration approval | Pending; no migration created or applied |
 | P0 closure | OPEN |
