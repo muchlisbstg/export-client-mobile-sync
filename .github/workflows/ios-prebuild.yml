@@ -1,6 +1,8 @@
 name: iOS Prebuild Validation
 
 on:
+  push:
+    branches: ["release-readiness/**"]
   pull_request:
     paths:
       - "app.json"
