@@ -181,7 +181,7 @@ test("persistent outbox resumes sync after the peer returns and the node restart
 
   await firstSource.close();
   services.splice(services.indexOf(firstSource), 1);
-  const target = await boot({ nodeId: peerNodeId, port: targetPort, syncSecret: secret });
+  const target = await boot({ nodeId: peerNodeId, port: targetPort, syncSecret: secret, syncPeers: `mobile-recovery-source=http://127.0.0.1:${sourcePort}` });
   const restartedSource = createServer(sourceOptions);
   services.push(restartedSource);
   await restartedSource.start();
@@ -364,6 +364,7 @@ test("inbound sync requires an allowlisted immediate peer identity and preserves
     const stored = service.db.prepare("SELECT origin_node_id AS originNodeId FROM inquiries WHERE id=?").get(record.id);
     assert.equal(stored.originNodeId, "original-origin-node",
       "origin provenance must remain distinct from the immediate allowlisted relay peer");
+    await waitForOutboxState(service.db, record.id, "trusted-peer", (row) => row?.attemptCount >= 1, "one failed relay attempt");
   } finally {
     await service.close();
   }
