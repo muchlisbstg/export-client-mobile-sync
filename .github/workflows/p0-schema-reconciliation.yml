@@ -10,6 +10,7 @@ on:
       - "test/schema-reconciliation-contract.test.mjs"
       - ".github/workflows/p0-schema-reconciliation.yml"
       - "docs/p0-schema-reconciliation-remediation.md"
+      - "docs/database/TRANSACTION_TENANT_INTEGRITY_DESIGN.md"
   workflow_dispatch:
 
 permissions:
