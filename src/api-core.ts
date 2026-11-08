@@ -36,9 +36,6 @@ export type SyncStatus = {
 
 export type ApiHealth = {
   status: "ok";
-  nodeId: string;
-  syncEnabled: boolean;
-  syncStatus: SyncStatus;
 };
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -88,7 +85,7 @@ export function createApiClient(apiBaseUrl: string, fetcher: typeof fetch = fetc
   return {
     async getHealth(): Promise<ApiHealth> {
       const health = await requestJson<ApiHealth>("/health");
-      if (health.status !== "ok" || !health.syncStatus) throw new Error("API belum siap.");
+      if (health.status !== "ok") throw new Error("API belum siap.");
       return health;
     },
 
