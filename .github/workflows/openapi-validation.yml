@@ -1,0 +1,42 @@
+name: OpenAPI 3.1 Validation
+
+on:
+  push:
+    branches:
+      - docs/p0-001-release-authorization-openapi-2026-11-08
+    paths:
+      - 'docs/api/release-authorization.openapi.yaml'
+      - '.github/workflows/openapi-validation.yml'
+  pull_request:
+    paths:
+      - 'docs/api/release-authorization.openapi.yaml'
+      - '.github/workflows/openapi-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-openapi:
+    name: Validate OpenAPI 3.1 contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Redocly CLI
+        run: npm install --global @redocly/cli@1.34.5
+      - name: Lint OpenAPI 3.1 specification
+        run: redocly lint --extends=spec docs/api/release-authorization.openapi.yaml
+      - name: Bundle and resolve references
+        run: redocly bundle docs/api/release-authorization.openapi.yaml --output /tmp/release-authorization.bundle.yaml
+      - name: Verify bundled artifact exists
+        run: test -s /tmp/release-authorization.bundle.yaml
