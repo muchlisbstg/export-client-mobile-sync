@@ -24,7 +24,7 @@ test("schema contract audit is read-only and reports missing tenant/site integri
         "ASSIGNMENT_TENANT_TRANSACTION_FK_MISSING",
         "SITE_LINK_TENANT_SITE_FK_MISSING",
         "SITE_LINK_TENANT_TRANSACTION_FK_MISSING",
-        "TRANSACTION_ENTERPRISE_BRIDGE_MISSING",
+        "TRANSACTION_TENANT_SCOPE_BRIDGE_MISSING",
       ].sort(),
     );
     assert.equal(report.blockerCount, 5);

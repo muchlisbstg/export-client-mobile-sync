@@ -28,7 +28,7 @@ function hasForeignKey(db, sourceTable, targetTable, pairs) {
 
 /**
  * Read-only schema contract inspection. It never creates, alters, or migrates tables.
- * The transaction_enterprise_parties bridge is required because a transaction can
+ * The transaction_tenant_scopes bridge is required because a transaction can
  * belong to either its buyer enterprise or seller enterprise.
  */
 export function inspectTransactionAuthorizationSchema(db) {
@@ -38,16 +38,16 @@ export function inspectTransactionAuthorizationSchema(db) {
     if (!tables.has(name)) findings.push({ code: "REQUIRED_TABLE_MISSING", table: name, severity: "blocker" });
   }
 
-  if (!tables.has("transaction_enterprise_parties")) {
+  if (!tables.has("transaction_tenant_scopes")) {
     findings.push({
-      code: "TRANSACTION_ENTERPRISE_BRIDGE_MISSING",
-      table: "transaction_enterprise_parties",
+      code: "TRANSACTION_TENANT_SCOPE_BRIDGE_MISSING",
+      table: "transaction_tenant_scopes",
       severity: "blocker",
-      detail: "A transaction may be scoped to either buyer_tenant_id or seller_tenant_id; a bridge is needed for composite tenant/transaction foreign keys.",
+      detail: "A tenant must have an explicit transaction scope before assignments or site links can reference that transaction.",
     });
   }
 
-  if (!hasForeignKey(db, "transaction_access_assignments", "transaction_enterprise_parties", [
+  if (!hasForeignKey(db, "transaction_access_assignments", "transaction_tenant_scopes", [
     ["tenant_id", "tenant_id"], ["transaction_id", "transaction_id"],
   ])) {
     findings.push({
@@ -67,7 +67,7 @@ export function inspectTransactionAuthorizationSchema(db) {
     });
   }
 
-  if (!hasForeignKey(db, "transaction_site_links", "transaction_enterprise_parties", [
+  if (!hasForeignKey(db, "transaction_site_links", "transaction_tenant_scopes", [
     ["tenant_id", "tenant_id"], ["transaction_id", "transaction_id"],
   ])) {
     findings.push({
