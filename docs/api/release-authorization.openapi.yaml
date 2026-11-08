@@ -61,6 +61,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CreateReleaseRequest' }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Request created.
           content:
@@ -88,6 +90,9 @@ paths:
           schema: { $ref: '#/components/schemas/Identifier' }
         - $ref: '#/components/parameters/CorrelationId'
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Page of requests visible to the authenticated actor.
           content:
@@ -104,6 +109,9 @@ paths:
       operationId: getReleaseAuthorizationRequest
       summary: Get a release authorization request
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Request detail.
           content:
@@ -121,6 +129,9 @@ paths:
       summary: Read current release gate evaluation
       description: NOT_APPLICABLE is assigned only by the server policy engine, never by a client.
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Gate results and authoritative source versions.
           content:
@@ -145,6 +156,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/EvaluateRequest' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Current gate evaluation. This is not a release authorization.
           content:
@@ -173,6 +187,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SellerInstructionInput' }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Instruction recorded.
           content:
@@ -185,8 +201,6 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
   /release-authorizations/requests/{request_id}/seller-instruction-changes:
     parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -204,6 +218,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SellerInstructionChangeInput' }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Append-only instruction change recorded.
           content:
@@ -224,6 +240,9 @@ paths:
       operationId: listReleaseApprovals
       summary: List approvals for a release request
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Approval history; invalidated and expired records remain visible.
           content:
@@ -250,6 +269,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ApprovalInput' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Approval recorded.
           content:
@@ -277,6 +299,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/VetoInput' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Veto created.
           content:
@@ -304,6 +329,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/VetoClearanceInput' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Veto clearance decision recorded.
           content:
@@ -331,6 +359,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SuspensionInput' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Suspension created.
           content:
@@ -358,6 +389,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SuspensionClearanceSubmissionInput' }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '201':
           description: Clearance submission recorded; hold remains active pending verification.
           content:
@@ -387,6 +420,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/SuspensionClearanceVerificationInput' }
       responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Clearance verification decision recorded.
           content:
@@ -416,6 +451,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RevalidateRequest' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Revalidation result and invalidated approvals.
           content:
@@ -434,6 +472,9 @@ paths:
       operationId: getReleaseAuthorization
       summary: Get a release authorization
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Authorization detail.
           content:
@@ -462,6 +503,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ExecuteReleaseInput' }
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Existing idempotent execution result or completed execution.
           content:
@@ -495,6 +539,9 @@ paths:
         operation and key. A 404 means no record is visible; it is not permission
         to retry with a new key. A 202 outcome requires polling this resource.
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: A committed or terminal execution outcome was found.
           content:
@@ -516,6 +563,9 @@ paths:
       operationId: getReleaseExecution
       summary: Get a release execution
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Execution detail.
           content:
@@ -535,6 +585,9 @@ paths:
         - $ref: '#/components/parameters/PageCursor'
         - $ref: '#/components/parameters/PageSize'
       responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
         '200':
           description: Append-only audit event page.
           content:
