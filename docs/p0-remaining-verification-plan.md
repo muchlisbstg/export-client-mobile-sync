@@ -35,7 +35,6 @@ The four intended composite foreign keys are:
 Do not implement DDL until all of the following have written decisions:
 
 - Buyer/Seller application roles are internal staff roles or external counterparty logins.
-- Whether enterprise-wide NULL site scope is permitted, and the exact roles allowed to use it.
 - Transaction scope creation, suspension, revocation, and post-contract amendment semantics.
 - Legal-party identifiers, country/jurisdiction validation, retention, and signed-contract snapshot requirements.
 - Independent Database Reviewer and independent Security Reviewer are identified and approve the exact candidate SHA.
@@ -206,11 +205,11 @@ Implications for the target model:
 **What this decision does not approve:**
 
 - Delegated tenant scope is explicitly prohibited for MVP and initial release; no delegated tenant grants, membership, or access path may be implemented in this release scope.
-- It does not approve enterprise-wide NULL-site access or its allowed roles.
+- It does not approve any other role's NULL-site access; only enterprise_admin is approved for enterprise-wide NULL site scope under the constraints recorded in section 12.
 - It does not approve the complete ADR, schema, DDL, migration, backfill, RLS policy, or production/staging change.
 - It does not replace independent Database and Security review.
 
-**Remaining domain decisions:** transaction-wide NULL-site policy for internal roles; transaction scope lifecycle; legal-party verification and jurisdiction/retention requirements; immutable contract snapshot and amendment policy. Until these and independent reviews are resolved, ADR P0-001 remains NOT APPROVED and schema blockers remain OPEN.
+**Remaining domain decisions:** transaction scope lifecycle; legal-party verification and jurisdiction/retention requirements; immutable contract snapshot and amendment policy. Until these and independent reviews are resolved, ADR P0-001 remains NOT APPROVED and schema blockers remain OPEN.
 
 
 ## 11. Domain decision update — delegated tenant scope — 2026-11-08
@@ -226,3 +225,18 @@ Implementation and test implications:
 - Any future proposal to introduce delegation requires a separate domain/legal decision, threat-model review, and explicit approval; it is outside this release baseline.
 
 **Scope limitation:** this decision does not approve the complete ADR, NULL-site policy, transaction lifecycle, legal-party verification/retention rules, contract snapshot/amendment policy, DDL, migrations, backfills, RLS, or staging/production changes. ADR P0-001 remains NOT APPROVED pending the remaining decisions and independent Database/Security reviews.
+
+
+## 12. Domain decision update — NULL site policy — 2026-11-08
+
+**User-confirmed decision:** for MVP and the initial release, `enterprise_admin` may have enterprise-wide access without a site assignment (`site_id = NULL`); all operational internal roles must have an explicit, active, tenant-matching site assignment.
+
+Policy boundaries:
+
+- `enterprise_admin`: NULL site is permitted only for explicitly authorized enterprise-administration capabilities and only within the user's active `tenant_id` and approved transaction scope. It does not grant cross-tenant access, unrestricted transaction access, or permission to bypass endpoint-specific authorization and audit requirements.
+- `supplier`, `warehouse`, `qc`, and `logistics`: NULL site is prohibited. The applicable site assignment must exist, be active, belong to the same tenant, and satisfy the operation's site-type and source/destination requirements.
+- Operational routes must fail closed when site context is absent, inactive, foreign-tenant, wrong-type, or revoked. No fallback from a missing/invalid site to enterprise-wide access is allowed.
+- External Buyer/Seller users are not internal roles and continue to use separately verified transaction-party access assignments, not NULL-site internal assignments.
+- Database constraints and authorization tests must enforce the role-specific NULL policy; PostgreSQL FK/RLS integration must verify the behavior, not SQLite tests alone.
+
+**Scope limitation:** this decision does not approve the complete ADR, transaction scope lifecycle, legal-party verification/jurisdiction/retention, immutable contract snapshots/amendments, DDL, migrations, backfills, RLS policies, or staging/production changes. ADR P0-001 remains NOT APPROVED pending remaining domain decisions and independent Database/Security reviews.
