@@ -25,7 +25,7 @@ The GitHub Actions workflow `.github/workflows/openapi-validation.yml` runs:
 
 **Historical run (not current-candidate evidence):** [GitHub Actions run #2](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42449745086) completed successfully for candidate commit `916fa9fe48137e367526c6915a7273e0470469bc`. Redocly lint, bundle/reference resolution, and artifact existence passed on that earlier candidate only.
 
-**Corrected candidate:** YAML correction commit `bf336164398893723b9adb9080de0cd47628fbb8`; blob `ae248b0d7d894d5354cce842c27b7082f5f68735`. The PR head advances when this report and workflow trigger are committed. The final validation record must name the exact resulting head SHA and run ID.
+**Corrected candidate:** Latest YAML correction commit `bba687468613f0f69f0a8de50dc3b27b25d282ad`; blob `1c0675e66de5f4834fb5a1c2a8280bbe4a8326eb`. Subsequent report commits advance the PR head. The final validation record must name the exact resulting head SHA and run ID.
 
 ## Approved domain/API decisions
 
@@ -72,3 +72,10 @@ No independent reviewer sign-offs are evidenced yet. Automated CI cannot replace
 ## Freeze gate
 
 **NOT READY TO FREEZE.** Await exact-head CI PASS, complete response/error contract audit, and independent review evidence. Domain Service Design must not start until a separate freeze decision is recorded.
+
+
+## Response coverage inventory
+
+A static operation inventory found 20 HTTP operations. Every operation now declares 400, 429 and 500 Problem responses, and duplicate response keys were removed. All 20 operations declare 401 and 403. 404 is applied to resource-specific operations; it is not required for collection listing or creation where no target resource is being read. Operation-specific 409, 422, 423 and 503 responses remain where applicable. This inventory is not a substitute for reviewing the semantics of each response and every success/error media schema.
+
+Latest schema candidate: commit `bba687468613f0f69f0a8de50dc3b27b25d282ad`, YAML blob `1c0675e66de5f4834fb5a1c2a8280bbe4a8326eb`. Exact-head CI is pending and must be confirmed after the final report commit.
