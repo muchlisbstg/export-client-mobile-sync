@@ -40,6 +40,16 @@ test("real Chromium enforces allowed-origin preflight and actual CORS response",
     browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
     const page = await browser.newPage();
     await page.goto(origin.origin, { waitUntil: "domcontentloaded" });
+    const allowedMethods = [];
+    let allowedActualHeaders = {};
+    page.on("request", (request) => {
+      if (request.url() === apiOrigin + "/health") allowedMethods.push(request.method());
+    });
+    page.on("response", (response) => {
+      if (response.url() === apiOrigin + "/health" && response.request().method() === "GET") {
+        allowedActualHeaders = response.headers();
+      }
+    });
 
     const allowed = await page.evaluate(async (url) => {
       const response = await fetch(url + "/health", {
@@ -48,13 +58,15 @@ test("real Chromium enforces allowed-origin preflight and actual CORS response",
       });
       return {
         status: response.status,
-        allowOrigin: response.headers.get("access-control-allow-origin"),
         body: await response.json(),
       };
     }, apiOrigin);
     assert.equal(allowed.status, 200);
-    assert.equal(allowed.allowOrigin, origin.origin);
     assert.deepEqual(allowed.body, { status: "ok" });
+    assert.ok(allowedMethods.includes("OPTIONS"), "Chromium must issue a real CORS preflight");
+    assert.ok(allowedMethods.includes("GET"), "Chromium must issue the actual API request");
+    assert.equal(allowedActualHeaders["access-control-allow-origin"], origin.origin,
+      "actual response must carry the exact allowed origin (verified from browser network response)");
 
     const hostile = await startOriginServer();
     try {
