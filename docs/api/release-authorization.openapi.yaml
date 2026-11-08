@@ -1,0 +1,1119 @@
+openapi: 3.1.0
+info:
+  title: Export Client Release Authorization API
+  version: 1.0.0-draft.2
+  summary: Contract for server-authoritative goods release decisions.
+  description: |
+    Draft API contract for release authorization. This contract does not claim
+    that the API is implemented. Signed contract snapshots, payment ledger,
+    evidence register, and server-side authorization remain separate sources
+    of truth. QC is a quality decision only and never grants release.
+    Approval expiry is 24 hours from the final required approval. Material
+    changes invalidate affected approvals server-side. Transaction scope
+    activation and reactivation require bilateral approval.
+
+    Authorization and disclosure policy: tenant context is resolved from the
+    authenticated principal on the server; callers cannot select or override
+    tenant identity. Roles, party authority, site/transaction assignment,
+    separation of duties, and domain ownership are enforced server-side.
+    Return 404 for nonexistent or cross-tenant/non-disclosable resources;
+    return 403 only when same-tenant existence may be disclosed but the actor
+    lacks permission. This rule applies consistently to resource reads,
+    writes, and idempotency reconciliation. Idempotency records are scoped by
+    tenant, operation, key, and canonical payload hash. Replays return the
+    original result; key reuse with a different payload returns 409.
+
+    Release execution has a durable commit boundary: goods-release state,
+    authorization consumption, and an audit/outbox record commit atomically.
+    External audit delivery may be asynchronous, but the outbox record is in
+    the same transaction. A committed release is never reported before that
+    durable transaction commits.
+  contact:
+    name: Export Client API Governance
+servers:
+  - url: https://api.example.com/api/v1
+    description: Production placeholder; not an operational endpoint.
+  - url: https://staging-api.example.com/api/v1
+    description: Staging placeholder; not an operational endpoint.
+tags:
+  - name: Release Requests
+  - name: Approvals
+  - name: Vetoes
+  - name: Suspensions
+  - name: Authorizations
+  - name: Executions
+  - name: Audit
+security:
+  - BearerAuth: []
+paths:
+  /release-authorizations/requests:
+    post:
+      tags: [Release Requests]
+      operationId: createReleaseAuthorizationRequest
+      summary: Create a release authorization request
+      description: Creates a request only; it does not authorize or execute release.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReleaseRequest' }
+      responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Request created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    get:
+      tags: [Release Requests]
+      operationId: listReleaseAuthorizationRequests
+      summary: List release authorization requests
+      description: Read-only, tenant-scoped pagination. Tenant membership and row visibility are derived and enforced server-side; no tenant selector is accepted from the caller.
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ReleaseRequestStatus' }
+        - name: contract_id
+          in: query
+          schema: { $ref: '#/components/schemas/Identifier' }
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Page of requests visible to the authenticated actor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseRequestPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/requests/{request_id}:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      tags: [Release Requests]
+      operationId: getReleaseAuthorizationRequest
+      summary: Get a release authorization request
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Request detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /release-authorizations/requests/{request_id}/gates:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      tags: [Release Requests]
+      operationId: getReleaseRequestGates
+      summary: Read current release gate evaluation
+      description: NOT_APPLICABLE is assigned only by the server policy engine, never by a client.
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Gate results and authoritative source versions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GateEvaluation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /release-authorizations/requests/{request_id}/evaluate:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Release Requests]
+      operationId: evaluateReleaseRequest
+      summary: Re-evaluate release gates
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateRequest' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Current gate evaluation. This is not a release authorization.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GateEvaluation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/requests/{request_id}/seller-instruction:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Approvals]
+      operationId: recordSellerReleaseInstruction
+      summary: Record seller release instruction
+      description: Seller instruction is mandatory under the frozen policy matrix; it is a distinct append-only party instruction, not a party approval and not itself release authorization. Authorized Seller actors may append a superseding or withdrawal decision before execution; prior instructions remain immutable.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellerInstructionInput' }
+      responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Instruction recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SellerInstruction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /release-authorizations/requests/{request_id}/seller-instruction-changes:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Approvals]
+      operationId: appendSellerInstructionChange
+      summary: Supersede or withdraw a seller instruction
+      description: Append-only change command. Only an authorized Seller may submit it before execution. It never edits or deletes prior instructions; it invalidates dependent approvals and active authorization. After execution, use a compensating/audit event outside this pre-execution command.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellerInstructionChangeInput' }
+      responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Append-only instruction change recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SellerInstructionChange' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/requests/{request_id}/approvals:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      tags: [Approvals]
+      operationId: listReleaseApprovals
+      summary: List approvals for a release request
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Approval history; invalidated and expired records remain visible.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Approvals]
+      operationId: recordReleaseApproval
+      summary: Record an approval from an authorized approver
+      description: |
+        Buyer approval is conditional on the signed contract and applicable law.
+        The approval type is extensible for additional contractual party approvals.
+        The server calculates expires_at as 24 hours after the final required
+        approval is recorded; clients cannot set approval timestamps or expiry.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalInput' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Approval recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Approval' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /release-authorizations/requests/{request_id}/vetoes:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Vetoes]
+      operationId: createReleaseVeto
+      summary: Create a release veto
+      description: Veto is a distinct protective decision and lifecycle; it is not a suspension.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VetoInput' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Veto created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Veto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /release-authorizations/vetoes/{veto_id}/clearance:
+    parameters:
+      - $ref: '#/components/parameters/VetoId'
+    post:
+      tags: [Vetoes]
+      operationId: clearReleaseVeto
+      summary: Clear a release veto
+      description: Only the authorized owner of the underlying veto domain may clear it. Clearance does not authorize release.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VetoClearanceInput' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Veto clearance decision recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Veto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /release-authorizations/requests/{request_id}/suspensions:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Suspensions]
+      operationId: createReleaseSuspension
+      summary: Suspend release processing
+      description: Suspension temporarily blocks processing; scope reactivation remains a separate bilateral decision.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspensionInput' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Suspension created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suspension' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /release-authorizations/suspensions/{suspension_id}/clearance-submissions:
+    parameters:
+      - $ref: '#/components/parameters/SuspensionId'
+    post:
+      tags: [Suspensions]
+      operationId: submitSuspensionClearance
+      summary: Submit suspension clearance for independent verification
+      description: Submission records evidence and reason only. It cannot verify or clear the hold. The submitter is recorded so the server can enforce maker-checker.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspensionClearanceSubmissionInput' }
+      responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '201':
+          description: Clearance submission recorded; hold remains active pending verification.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suspension' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/suspensions/{suspension_id}/clearance-verifications:
+    parameters:
+      - $ref: '#/components/parameters/SuspensionId'
+    post:
+      tags: [Suspensions]
+      operationId: verifySuspensionClearance
+      summary: Verify or reject a submitted suspension clearance
+      description: Only the authorized owner/reviewer of the underlying hold may verify or reject. The submitter cannot verify their own submission. Verification clears only the hold; it never grants release and requires fresh revalidation and approvals.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspensionClearanceVerificationInput' }
+      responses:
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Clearance verification decision recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suspension' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/requests/{request_id}/revalidate:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Release Requests]
+      operationId: revalidateReleaseRequest
+      summary: Revalidate all release gates and approvals
+      description: Revalidation is required after suspension clearance and material changes. It never reactivates transaction scope.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevalidateRequest' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Revalidation result and invalidated approvals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RevalidationResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /release-authorizations/authorizations/{authorization_id}:
+    parameters:
+      - $ref: '#/components/parameters/AuthorizationId'
+    get:
+      tags: [Authorizations]
+      operationId: getReleaseAuthorization
+      summary: Get a release authorization
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Authorization detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseAuthorization' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /release-authorizations/authorizations/{authorization_id}/execute:
+    parameters:
+      - $ref: '#/components/parameters/AuthorizationId'
+    post:
+      tags: [Executions]
+      operationId: executeReleaseAuthorization
+      summary: Execute an authorized goods release
+      description: |
+        Execution is server-side and atomic with the authorization consumption
+        record and audit event. A consumed authorization cannot be executed
+        again. On timeout, clients must reconcile using the same idempotency key.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExecuteReleaseInput' }
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Existing idempotent execution result or completed execution.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseExecution' }
+        '201':
+          description: Release execution committed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseExecution' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '423': { $ref: '#/components/responses/Locked' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/executions/by-idempotency-key/{idempotency_key}:
+    parameters:
+      - name: idempotency_key
+        in: path
+        required: true
+        description: Original key supplied for the mutation being reconciled.
+        schema: { type: string, minLength: 8, maxLength: 128 }
+    get:
+      tags: [Executions]
+      operationId: getExecutionByIdempotencyKey
+      summary: Reconcile an execution after timeout or uncertain outcome
+      description: |
+        The server scopes lookup to authenticated tenant, actor permissions,
+        operation and key. Return 200 with NOT_STARTED when no attempt exists
+        for the scoped key; return 404 only for nonexistent or non-disclosable
+        keys/resources. A 202 outcome requires polling this resource. A NOT_STARTED
+        result is not permission to use a different key for the same intent.
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Current scoped idempotency state, including NOT_STARTED when no attempt exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionLookup' }
+        '202':
+          description: Processing or reconciliation is still in progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionLookup' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /release-authorizations/executions/{execution_id}:
+    parameters:
+      - $ref: '#/components/parameters/ExecutionId'
+    get:
+      tags: [Executions]
+      operationId: getReleaseExecution
+      summary: Get a release execution
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Execution detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseExecution' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /release-authorizations/requests/{request_id}/audit-events:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      tags: [Audit]
+      operationId: listReleaseAuthorizationAuditEvents
+      summary: Read request audit events
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '200':
+          description: Append-only audit event page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEventPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supabase Auth access token; tenant and actor context are resolved server-side.
+  parameters:
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    VetoId:
+      name: veto_id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    SuspensionId:
+      name: suspension_id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    AuthorizationId:
+      name: authorization_id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    ExecutionId:
+      name: execution_id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Identifier' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unique per authenticated tenant and operation. Server stores canonical payload hash and attempt/result state; same key and same hash replays the original result, while same key with a different hash returns 409. Reconciliation must not expose cross-tenant key existence.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, maxLength: 512 }
+    PageSize:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+  responses:
+    BadRequest:
+      description: Malformed request or invalid parameter.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Authentication required or invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Actor is authenticated but lacks permission when same-tenant resource existence may be disclosed. Use 404 for nonexistent or cross-tenant/non-disclosable resources.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found or not disclosed.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State, version or idempotency conflict.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: Business rule or release gate failure.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Locked:
+      description: Release is blocked by an active suspension or veto.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unavailable:
+      description: Required dependency is unavailable; outcome may require reconciliation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    InternalError:
+      description: Unexpected server error; mutation outcome may require reconciliation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+    Timestamp:
+      type: string
+      format: date-time
+    DecimalQuantity:
+      type: string
+      pattern: '^(0|[1-9][0-9]*)(\.[0-9]+)?$'
+      description: Decimal string to avoid binary floating-point quantity errors.
+    CurrencyCode:
+      type: string
+      pattern: '^[A-Z]{3}$'
+    ReleaseRequestStatus:
+      type: string
+      enum: [DRAFT, EVALUATING, AWAITING_INSTRUCTION, AWAITING_APPROVALS, BLOCKED, AUTHORIZED, EXECUTED, CANCELLED, EXPIRED]
+    GateStatus:
+      type: string
+      enum: [PASS, FAIL, PENDING, NOT_APPLICABLE, STALE]
+    GateType:
+      type: string
+      enum: [CONTRACT, TRANSACTION_SCOPE, PAYMENT, EVIDENCE, GUARANTEE, LEGAL, SHARIA, QC, CUSTODY, INVENTORY, PARTY_APPROVAL]
+    ApprovalType:
+      type: string
+      description: Party approval category; seller release instruction is a separate mandatory act and is not represented as a party approval. Server policy derives whether buyer or another contractual party approval is required.
+      enum: [BUYER_RELEASE, CONTRACTUAL_PARTY_RELEASE]
+    ApprovalDecision:
+      type: string
+      enum: [APPROVE, REJECT]
+    CreateReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [contract_id, contract_snapshot_id, contract_item_ids, requested_quantity, unit]
+      properties:
+        contract_id: { $ref: '#/components/schemas/Identifier' }
+        contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
+        contract_item_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Identifier' }
+        requested_quantity: { $ref: '#/components/schemas/DecimalQuantity' }
+        unit: { type: string, minLength: 1, maxLength: 32 }
+        obligation_ids:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Identifier' }
+    ReleaseRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateReleaseRequest'
+        - type: object
+          required: [request_id, status, created_at, updated_at, versions]
+          properties:
+            request_id: { $ref: '#/components/schemas/Identifier' }
+            status: { $ref: '#/components/schemas/ReleaseRequestStatus' }
+            created_at: { $ref: '#/components/schemas/Timestamp' }
+            updated_at: { $ref: '#/components/schemas/Timestamp' }
+            versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+            authorization_id: { $ref: '#/components/schemas/Identifier' }
+    ReleaseRequestPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReleaseRequest' }
+        next_cursor: { type: string }
+    EvaluateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+    RevalidateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+    EvaluatedVersions:
+      type: object
+      additionalProperties: false
+      required: [contract_snapshot_id, scope_version, scope_status, payment_ledger_version, evidence_register_version, policy_version]
+      properties:
+        contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
+        scope_version:
+          type: integer
+          minimum: 1
+          description: Version read from the server-owned append-only transaction-scope decision register linked to contract_id and contract_snapshot_id; clients cannot write or choose this value.
+        scope_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, WITHDRAWN, CLOSED]
+          description: Server-derived current state from valid bilateral activation/reactivation or permitted protective suspension/withdrawal events.
+        payment_ledger_version: { type: string, minLength: 1 }
+        evidence_register_version: { type: string, minLength: 1 }
+        guarantee_register_version: { type: string }
+        policy_version: { type: string, minLength: 1 }
+    GateResult:
+      type: object
+      additionalProperties: false
+      required: [gate, status, evaluated_at]
+      properties:
+        gate: { $ref: '#/components/schemas/GateType' }
+        status: { $ref: '#/components/schemas/GateStatus' }
+        evaluated_at: { $ref: '#/components/schemas/Timestamp' }
+        source_reference: { $ref: '#/components/schemas/Identifier' }
+        reason_code: { type: string }
+        explanation: { type: string }
+    GateEvaluation:
+      type: object
+      additionalProperties: false
+      required: [request_id, overall_status, gates, evaluated_at, versions]
+      properties:
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        overall_status: { type: string, enum: [PASS, BLOCKED, PENDING, STALE] }
+        gates:
+          type: array
+          items: { $ref: '#/components/schemas/GateResult' }
+        evaluated_at: { $ref: '#/components/schemas/Timestamp' }
+        versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+    SellerInstructionInput:
+      type: object
+      additionalProperties: false
+      required: [instruction, contract_snapshot_id]
+      properties:
+        instruction: { type: string, enum: [RELEASE, DO_NOT_RELEASE] }
+        contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
+        note: { type: string, maxLength: 1000 }
+    SellerInstruction:
+      allOf:
+        - $ref: '#/components/schemas/SellerInstructionInput'
+        - type: object
+          required: [instruction_id, actor_id, recorded_at]
+          properties:
+            instruction_id: { $ref: '#/components/schemas/Identifier' }
+            actor_id: { $ref: '#/components/schemas/Identifier' }
+            recorded_at: { $ref: '#/components/schemas/Timestamp' }
+    SellerInstructionChangeInput:
+      type: object
+      additionalProperties: false
+      required: [instruction_id, action, reason]
+      properties:
+        instruction_id: { $ref: '#/components/schemas/Identifier' }
+        action: { type: string, enum: [SUPERSEDE, WITHDRAW] }
+        replacement_instruction: { type: string, enum: [RELEASE, DO_NOT_RELEASE] }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+      allOf:
+        - if:
+            properties: { action: { const: SUPERSEDE } }
+          then:
+            required: [replacement_instruction]
+        - if:
+            properties: { action: { const: WITHDRAW } }
+          then:
+            not:
+              required: [replacement_instruction]
+    SellerInstructionChange:
+      allOf:
+        - $ref: '#/components/schemas/SellerInstructionChangeInput'
+        - type: object
+          required: [change_id, request_id, actor_id, recorded_at, invalidated_approval_ids]
+          properties:
+            change_id: { $ref: '#/components/schemas/Identifier' }
+            request_id: { $ref: '#/components/schemas/Identifier' }
+            actor_id: { $ref: '#/components/schemas/Identifier' }
+            recorded_at: { $ref: '#/components/schemas/Timestamp' }
+            invalidated_approval_ids:
+              type: array
+              items: { $ref: '#/components/schemas/Identifier' }
+            invalidated_authorization_id: { $ref: '#/components/schemas/Identifier' }
+    ApprovalInput:
+      type: object
+      additionalProperties: false
+      required: [approval_type, decision, contract_snapshot_id, expected_versions]
+      properties:
+        approval_type: { $ref: '#/components/schemas/ApprovalType' }
+        decision: { $ref: '#/components/schemas/ApprovalDecision' }
+        contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
+        expected_versions:
+          $ref: '#/components/schemas/EvaluatedVersions'
+          description: Client-supplied optimistic precondition only. The server reads authoritative source versions, compares them, and computes the evaluated_versions returned in the approval record; this field is never treated as proof of current state.
+        note: { type: string, maxLength: 1000 }
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [approval_id, request_id, approval_type, decision, contract_snapshot_id, actor_id, status, decided_at, evaluated_versions]
+      properties:
+        approval_id: { $ref: '#/components/schemas/Identifier' }
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        approval_type: { $ref: '#/components/schemas/ApprovalType' }
+        decision: { $ref: '#/components/schemas/ApprovalDecision' }
+        contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
+        actor_id: { $ref: '#/components/schemas/Identifier' }
+        status: { type: string, enum: [ACCEPTED, REJECTED, INVALIDATED, EXPIRED] }
+        decided_at: { $ref: '#/components/schemas/Timestamp' }
+        evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+        expires_at:
+          allOf: [{ $ref: '#/components/schemas/Timestamp' }]
+          description: Present only for accepted approvals; server-set to 24 hours after the final required approval is recorded, not client-supplied.
+        invalidated_at: { $ref: '#/components/schemas/Timestamp' }
+        invalidation_reason: { type: string }
+        note: { type: string, maxLength: 1000 }
+    ApprovalPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Approval' }
+    VetoInput:
+      type: object
+      additionalProperties: false
+      required: [domain, reason_code, reason]
+      properties:
+        domain: { type: string, enum: [LEGAL, SHARIA, FINANCE, QC, WAREHOUSE, SECURITY, CONTRACT] }
+        reason_code: { type: string, minLength: 1, maxLength: 64 }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        affected_item_ids:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Identifier' }
+    VetoClearanceInput:
+      type: object
+      additionalProperties: false
+      required: [decision, evidence_ids, reason]
+      properties:
+        decision: { type: string, enum: [CLEAR, REJECT] }
+        evidence_ids:
+          type: array
+          items: { $ref: '#/components/schemas/Identifier' }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    Veto:
+      type: object
+      required: [veto_id, request_id, domain, status, created_at]
+      properties:
+        veto_id: { $ref: '#/components/schemas/Identifier' }
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        domain: { type: string }
+        status: { type: string, enum: [ACTIVE, CLEARANCE_PENDING, CLEARED, REJECTED, SUPERSEDED] }
+        reason_code: { type: string }
+        reason: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        cleared_at: { $ref: '#/components/schemas/Timestamp' }
+        cleared_by: { $ref: '#/components/schemas/Identifier' }
+    SuspensionInput:
+      type: object
+      additionalProperties: false
+      required: [domain, reason_code, reason]
+      properties:
+        domain: { type: string, enum: [LEGAL, SHARIA, FINANCE, QC, WAREHOUSE, SECURITY, CONTRACT, OPERATIONAL] }
+        reason_code: { type: string, minLength: 1, maxLength: 64 }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        affected_item_ids:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Identifier' }
+    SuspensionClearanceSubmissionInput:
+      type: object
+      additionalProperties: false
+      required: [reason, evidence_ids]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        evidence_ids:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Identifier' }
+    SuspensionClearanceVerificationInput:
+      type: object
+      additionalProperties: false
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [VERIFY, REJECT] }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    Suspension:
+      type: object
+      required: [suspension_id, request_id, domain, status, created_at]
+      properties:
+        suspension_id: { $ref: '#/components/schemas/Identifier' }
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        domain: { type: string }
+        status: { type: string, enum: [ACTIVE, CLEARANCE_SUBMITTED, CLEARANCE_VERIFIED, REVALIDATION_REQUIRED, CLOSED] }
+        reason_code: { type: string }
+        reason: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        verified_at: { $ref: '#/components/schemas/Timestamp' }
+        verified_by: { $ref: '#/components/schemas/Identifier' }
+    RevalidationResult:
+      type: object
+      required: [request_id, gate_evaluation, invalidated_approval_ids, revalidated_at]
+      properties:
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        gate_evaluation: { $ref: '#/components/schemas/GateEvaluation' }
+        invalidated_approval_ids:
+          type: array
+          items: { $ref: '#/components/schemas/Identifier' }
+        revalidated_at: { $ref: '#/components/schemas/Timestamp' }
+        authorization_eligible: { type: boolean }
+    ReleaseAuthorization:
+      type: object
+      required: [authorization_id, request_id, status, issued_at, expires_at, evaluated_versions]
+      properties:
+        authorization_id: { $ref: '#/components/schemas/Identifier' }
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        status: { type: string, enum: [ACTIVE, CONSUMED, INVALIDATED, EXPIRED] }
+        issued_at: { $ref: '#/components/schemas/Timestamp' }
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: Server-calculated short-lived expiry under the active release-authorization policy; never client-supplied.
+        evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+        consumed_at: { $ref: '#/components/schemas/Timestamp' }
+        invalidated_at: { $ref: '#/components/schemas/Timestamp' }
+        invalidation_reason: { type: string, description: Server-recorded reason when any material authoritative source version changes. }
+    ExecuteReleaseInput:
+      type: object
+      additionalProperties: false
+      required: [expected_authorization_version]
+      properties:
+        expected_authorization_version: { type: string, minLength: 1 }
+        note: { type: string, maxLength: 1000 }
+    ReleaseExecution:
+      type: object
+      required: [execution_id, authorization_id, request_id, status, completed_at, idempotency_key]
+      properties:
+        execution_id: { $ref: '#/components/schemas/Identifier' }
+        authorization_id: { $ref: '#/components/schemas/Identifier' }
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        status:
+          type: string
+          enum: [COMMITTED, FAILED]
+          description: FAILED is permitted only for a durable terminal record proving the goods-release state change did not commit. A pre-commit abort has no ReleaseExecution resource; the idempotency attempt remains reconcilable under the original key.
+        completed_at: { $ref: '#/components/schemas/Timestamp' }
+        committed_at: { $ref: '#/components/schemas/Timestamp' }
+        idempotency_key: { type: string }
+        audit_event_id: { $ref: '#/components/schemas/Identifier' }
+    ExecutionLookup:
+      type: object
+      required: [status, idempotency_key, reconciliation_required, retry_allowed]
+      properties:
+        status:
+          type: string
+          enum: [NOT_STARTED, PROCESSING, COMMITTED, FAILED, RECONCILIATION_REQUIRED]
+          description: NOT_STARTED is a typed lookup result when no attempt exists for this authenticated tenant, operation and key; do not return 404 merely because no attempt exists. A 404 is reserved for a key/resource that is non-disclosable under tenant policy.
+        idempotency_key: { type: string }
+        execution_id: { $ref: '#/components/schemas/Identifier' }
+        authorization_id: { $ref: '#/components/schemas/Identifier' }
+        reconciliation_required: { type: boolean }
+        retry_allowed:
+          type: boolean
+          description: Server-derived. If true, retry only the same operation with the same original key and canonical payload; never generate a new key for an uncertain attempt.
+        terminal_problem: { $ref: '#/components/schemas/Problem' }
+    AuditEvent:
+      type: object
+      required: [audit_event_id, event_type, actor_id, occurred_at, sequence]
+      properties:
+        audit_event_id: { $ref: '#/components/schemas/Identifier' }
+        event_type: { type: string }
+        actor_id: { $ref: '#/components/schemas/Identifier' }
+        occurred_at: { $ref: '#/components/schemas/Timestamp' }
+        sequence: { type: integer, minimum: 1 }
+        correlation_id: { type: string }
+        subject_id: { $ref: '#/components/schemas/Identifier' }
+        payload_digest: { type: string, pattern: '^[a-f0-9]{64}$' }
+    AuditEventPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditEvent' }
+        next_cursor: { type: string }
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details with a stable application error code.
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        code:
+          type: string
+          enum:
+            - AUTHENTICATION_REQUIRED
+            - ACTOR_NOT_AUTHORIZED
+            - RESOURCE_NOT_FOUND
+            - VALIDATION_FAILED
+            - IDEMPOTENCY_CONFLICT
+            - VERSION_CONFLICT
+            - AUTHORIZATION_ALREADY_CONSUMED
+            - RELEASE_GATE_FAILED
+            - APPROVAL_INVALIDATED
+            - APPROVAL_EXPIRED
+            - RELEASE_SUSPENDED
+            - RELEASE_VETOED
+            - EXECUTION_OUTCOME_UNKNOWN
+            - DEPENDENCY_UNAVAILABLE
+            - SCOPE_NOT_ACTIVE
+            - POLICY_REJECTED
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+              code: { type: string }
