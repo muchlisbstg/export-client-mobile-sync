@@ -35,7 +35,7 @@ The four intended composite foreign keys are:
 Do not implement DDL until all of the following have written decisions:
 
 - Buyer/Seller external counterparty identity and access separation is confirmed in section 10.
-- Role-specific NULL-site policy is confirmed in section 12; auditor scope remains a separate decision.
+- Role-specific NULL-site and auditor read-scope policies are confirmed in sections 12 and 13.
 - Transaction scope creation, suspension, revocation, and post-contract amendment semantics.
 - Legal-party identifiers, country/jurisdiction validation, retention, and signed-contract snapshot requirements.
 - Independent Database Reviewer and independent Security Reviewer are identified and approve the exact candidate SHA.
@@ -236,9 +236,24 @@ Policy boundaries:
 
 - `enterprise_admin`: NULL site is permitted only for explicitly authorized enterprise-administration capabilities and only within the user's active `tenant_id` and approved transaction scope. It does not grant cross-tenant access, unrestricted transaction access, or permission to bypass endpoint-specific authorization and audit requirements.
 - `supplier`, `warehouse`, `qc`, and `logistics`: NULL site is prohibited. The applicable site assignment must exist, be active, belong to the same tenant, and satisfy the operation's site-type and source/destination requirements.
-- `auditor`: this approval does not decide whether read-only audit access is enterprise-wide or site-scoped. Until separately approved, do not infer enterprise-wide access from `site_id = NULL`; enforce only an explicitly granted, tested scope.
+- `auditor`: read-only access is tenant-bounded. Tenant-level audit views may cover authorized audit records across that tenant; operational audit views require an explicit site scope and must not cross site boundaries. This is a distinct read-only policy, not an operational `site_id = NULL` privilege.
 - Operational routes must fail closed when site context is absent, inactive, foreign-tenant, wrong-type, or revoked. No fallback from a missing/invalid site to enterprise-wide access is allowed.
 - External Buyer/Seller users are not internal roles and continue to use separately verified transaction-party access assignments, not NULL-site internal assignments.
 - Database constraints and authorization tests must enforce the role-specific NULL policy; PostgreSQL FK/RLS integration must verify the behavior, not SQLite tests alone.
+
+**Scope limitation:** this decision does not approve the complete ADR, transaction scope lifecycle, legal-party verification/jurisdiction/retention, immutable contract snapshots/amendments, DDL, migrations, backfills, RLS policies, or staging/production changes. ADR P0-001 remains NOT APPROVED pending remaining domain decisions and independent Database/Security reviews.
+
+
+## 13. Domain decision update — auditor access scope — 2026-11-08
+
+**User-confirmed decision:** `auditor` remains strictly read-only and tenant-bounded. Tenant-level audit access is limited to records within the auditor's authorized tenant. When auditing operational activity at site level, an explicit site scope/assignment is required.
+
+Enforcement requirements:
+
+- Deny every mutation route for `auditor`, including operational, administrative, assignment, and site-management mutations.
+- Enforce the active tenant boundary for all audit, trace, and evidence reads; never expose another tenant's records or metadata.
+- For operational/site-level audit, require an explicit active site assignment matching the tenant and the audited resource's site. No implicit site expansion or cross-site access.
+- Tenant-wide read-only audit visibility is a separate capability from operational site access; it must not be implemented as a blanket bypass or as an operational NULL-site assignment.
+- Test positive and negative paths for tenant-wide audit reads, site-scoped operational reads, cross-tenant IDs, unassigned sites, revoked site assignments, and all mutation methods.
 
 **Scope limitation:** this decision does not approve the complete ADR, transaction scope lifecycle, legal-party verification/jurisdiction/retention, immutable contract snapshots/amendments, DDL, migrations, backfills, RLS policies, or staging/production changes. ADR P0-001 remains NOT APPROVED pending remaining domain decisions and independent Database/Security reviews.
