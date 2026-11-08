@@ -6,6 +6,8 @@ on:
       - docs/p0-001-release-authorization-openapi-2026-11-08
     paths:
       - 'docs/api/release-authorization.openapi.yaml'
+      - 'docs/api/release-authorization-openapi-final-review.md'
+      - 'docs/api/release-authorization-openapi-validation.md'
       - '.github/workflows/openapi-validation.yml'
   pull_request:
     paths:
