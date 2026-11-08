@@ -78,4 +78,9 @@ No independent reviewer sign-offs are evidenced yet. Automated CI cannot replace
 
 A static operation inventory found 20 HTTP operations. Every operation now declares 400, 429 and 500 Problem responses, and duplicate response keys were removed. All 20 operations declare 401 and 403. 404 is applied to resource-specific operations; it is not required for collection listing or creation where no target resource is being read. Operation-specific 409, 422, 423 and 503 responses remain where applicable. This inventory is not a substitute for reviewing the semantics of each response and every success/error media schema.
 
-Latest schema candidate: commit `bba687468613f0f69f0a8de50dc3b27b25d282ad`, YAML blob `1c0675e66de5f4834fb5a1c2a8280bbe4a8326eb`. Exact-head CI is pending and must be confirmed after the final report commit.
+Latest schema candidate: commit `482f342ed4a6e62d1d00624127b39f34287e264f`, YAML blob `b275e7357ce4f2253a73db118620b8b37ff15793`. The prior CI attempt failed on a YAML parse error (run #18 / ID `42450388713`); the missing closing brace was corrected in this candidate. A new exact-head CI PASS is still required.
+
+
+## CI failure record
+
+Run #18 (ID `42450388713`) checked PR merge ref `17e68108c33388fa0c35c7f58f55ec0cd6a3965b` and failed during Redocly lint with: `missed comma between flow collection entries` at YAML line 1023. The source was an unclosed inline mapping in `ReleaseAuthorization.invalidation_reason`. It was corrected in commit `482f342ed4a6e62d1d00624127b39f34287e264f`. The failed run is retained as evidence and must not be represented as a pass.
