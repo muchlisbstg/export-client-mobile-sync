@@ -257,3 +257,18 @@ Enforcement requirements:
 - Test positive and negative paths for tenant-wide audit reads, site-scoped operational reads, cross-tenant IDs, unassigned sites, revoked site assignments, and all mutation methods.
 
 **Scope limitation:** this decision does not approve the complete ADR, transaction scope lifecycle, legal-party verification/jurisdiction/retention, immutable contract snapshots/amendments, DDL, migrations, backfills, RLS policies, or staging/production changes. ADR P0-001 remains NOT APPROVED pending remaining domain decisions and independent Database/Security reviews.
+
+## 14. Domain decision update — post-contract transaction scope — 2026-11-08
+
+**User-confirmed decision (PROPOSED for ADR P0-001):** adopt **strict immutable operating-tenant scope after contract signature**.
+
+Policy:
+- Once the contract is signed, the operating-tenant scope for that contract/transaction must not be directly replaced, reassigned, or edited in place.
+- Any change that would alter the operating-tenant scope after signature must proceed through a formally governed amendment/addendum process, including legal review and the approvals required by the contract and applicable law.
+- Preserve the original signed scope and its evidence as immutable historical state. An amendment must reference the prior contract snapshot/version and record the proposed new scope, reason, effective time, approvals, and resulting version.
+- Until the amendment is validly approved and effective, the existing signed scope remains authoritative. A pending or rejected amendment does not change active authorization.
+- Suspension or revocation of an operating scope must not erase the signed scope, contract, audit trail, or historical evidence. Any resulting access restriction must be explicit, audited, and must not silently transfer authority to another tenant.
+- External Buyer/Seller party access remains separate from operating-tenant scope. This decision does not create tenant membership, delegated tenant scope, or new counterparty authorization.
+- Pre-signature scope changes may follow the separately approved lifecycle policy; this decision specifically locks the scope after contract signature.
+
+**Status and boundaries:** this is a proposed domain decision recorded at the user's direction. It is **not** approval of ADR P0-001, DDL, schema implementation, migrations, backfills, RLS policies, database access, staging/production changes, or deployment. The ADR remains NOT APPROVED. Legal-party governance, contract snapshot/amendment details, independent Database/Security review, and the remaining P0 evidence gates remain open.
