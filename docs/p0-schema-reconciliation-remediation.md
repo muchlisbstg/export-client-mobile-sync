@@ -21,7 +21,7 @@ The current SQLite schema defines `transaction_access_assignments` and `transact
 The current `supply_sites` table has a composite uniqueness constraint on `(tenant_id,id)`, which can support a composite foreign key. A transaction, however, can belong to either the buyer or seller enterprise. A direct single-column foreign key cannot prove that `tenant_id` is one of those two parties.
 
 The new read-only contract inspector reports these five blockers on the current schema:
-1. Missing `transaction_enterprise_parties` bridge.
+1. Missing `transaction_tenant_scopes` bridge.
 2. Missing composite tenant/transaction FK from transaction assignments.
 3. Missing composite tenant/site FK from transaction assignments.
 4. Missing composite tenant/transaction FK from transaction site links.
@@ -31,7 +31,7 @@ The new read-only contract inspector reports these five blockers on the current 
 
 A future schema PR should propose:
 
-- `transaction_enterprise_parties(tenant_id, transaction_id, party_role)` with primary key `(tenant_id, transaction_id)`.
+- `transaction_tenant_scopes(tenant_id, transaction_id, party_role)` with primary key `(tenant_id, transaction_id)`.
 - Foreign keys from the bridge to `tenants(id)` and `commercial_transactions(id)`.
 - A database constraint mechanism (trigger or equivalent declarative design) proving each bridge row's tenant equals either `buyer_tenant_id` or `seller_tenant_id`.
 - Composite foreign keys from assignments and site links to the bridge.
@@ -83,7 +83,7 @@ The `migrateTenantIsolation(db)` routine creates tenant and transaction tables a
 
 The read-only inspector and synthetic contract test identify the same five gaps:
 
-1. No `transaction_enterprise_parties` bridge to represent the transaction's buyer/seller party tuple.
+1. No `transaction_tenant_scopes` bridge to represent the transaction's buyer/seller party tuple.
 2. No composite `(tenant_id, transaction_id)` FK from transaction access assignments to the party bridge.
 3. No composite `(tenant_id, site_id)` FK from transaction access assignments to supply sites.
 4. No composite `(tenant_id, transaction_id)` FK from transaction site links to the party bridge.
