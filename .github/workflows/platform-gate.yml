@@ -1,0 +1,195 @@
+name: Platform Gate — same candidate SHA
+run-name: "Platform gate candidate 36943673b956c94c80d5e322adf0719b33bc2f80"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/platform-gate.yml"
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-gate-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+env:
+  CANDIDATE_SHA: 36943673b956c94c80d5e322adf0719b33bc2f80
+
+jobs:
+  web:
+    name: Expo Web export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify candidate and lockfile
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          echo "candidate_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          sha256sum package-lock.json | tee lockfile.sha256
+          npm ci
+      - name: Expo Web export
+        run: npm run export:web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-export-${{ env.CANDIDATE_SHA }}
+          path: |
+            dist/
+            lockfile.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Android native debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Verify candidate and install lockfile
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          sha256sum package-lock.json | tee lockfile.sha256
+          npm ci
+      - name: Android prebuild
+        run: npx expo prebuild --platform android --no-install
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk-${{ env.CANDIDATE_SHA }}
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            lockfile.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: iOS Simulator build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify candidate and install lockfile
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          sha256sum package-lock.json | tee lockfile.sha256
+          npm ci
+      - name: iOS prebuild
+        run: npx expo prebuild --platform ios --no-install
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+      - name: Build for iOS Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
+          test -n "$workspace"
+          scheme="$(basename "$workspace" .xcworkspace)"
+          xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+          app_path="$(find ios/build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app_path"
+          echo "$app_path" > ios-simulator-app-path.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app-${{ env.CANDIDATE_SHA }}
+          path: |
+            ios/build/Build/Products/Debug-iphonesimulator/*.app
+            ios-simulator-app-path.txt
+            lockfile.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  dependency-audit:
+    name: CVE and license audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify candidate and install lockfile
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          sha256sum package-lock.json | tee lockfile.sha256
+          npm ci
+      - name: Full dependency CVE audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > npm-audit-full.json
+          code=$?
+          set -e
+          echo "$code" > npm-audit-full.exit-code
+      - name: Production dependency CVE audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > npm-audit-production.json
+          code=$?
+          set -e
+          echo "$code" > npm-audit-production.exit-code
+      - name: License inventory
+        shell: bash
+        run: |
+          npx --yes license-checker --json --out licenses-all.json
+          npx --yes license-checker --production --json --out licenses-production.json
+      - name: Create audit manifest
+        run: |
+          {
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "lockfile_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "full_audit_exit=$(cat npm-audit-full.exit-code)"
+            echo "production_audit_exit=$(cat npm-audit-production.exit-code)"
+          } > dependency-audit-manifest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-${{ env.CANDIDATE_SHA }}
+          path: |
+            package-lock.json
+            dependency-audit-manifest.txt
+            npm-audit-full.json
+            npm-audit-full.exit-code
+            npm-audit-production.json
+            npm-audit-production.exit-code
+            licenses-all.json
+            licenses-production.json
+            lockfile.sha256
+          if-no-files-found: error
+          retention-days: 30
