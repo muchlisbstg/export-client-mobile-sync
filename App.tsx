@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { API_BASE_URL, createInquiry, getHealth, getProducts, trackInquiry, type InquiryStatus, type Product, type SyncStatus } from "./src/api";
+import { API_BASE_URL, createInquiry, getHealth, getProducts, trackInquiry, type InquiryStatus, type Product } from "./src/api";
 import { catalogSortOptions, filterProducts, getActiveCatalogFilters, getCatalogSearchHighlightParts, getCategories, getFacetCounts, getOrigins, getUnits, sortProducts, type CatalogSortDirection, type CatalogSortField } from "./src/catalog-filter";
 import { formatComparisonCsv, formatComparisonShare, getComparisonFieldsToDisplay, getDifferingComparisonFields, MAX_COMPARE_PRODUCTS, toggleCompareSelection, type ComparisonField } from "./src/catalog-compare";
 import { validateInquiryField, validateInquiryForm, type InquiryField, type InquiryFieldErrors } from "./src/rfq-validation";
@@ -84,8 +84,8 @@ function CatalogSearchHighlight({ value, query }: { value: string; query: string
 
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [syncStatusLoading, setSyncStatusLoading] = useState(true);
+  const [apiAvailable, setApiAvailable] = useState<boolean | null>(null);
+  const [apiStatusLoading, setApiStatusLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -177,20 +177,21 @@ export default function App() {
     }
   }
 
-  async function refreshSyncStatus() {
-    setSyncStatusLoading(true);
+  async function refreshApiLiveness() {
+    setApiStatusLoading(true);
     try {
-      setSyncStatus((await getHealth()).syncStatus);
+      const health = await getHealth();
+      setApiAvailable(health.status === "ok");
     } catch {
-      setSyncStatus(null);
+      setApiAvailable(false);
     } finally {
-      setSyncStatusLoading(false);
+      setApiStatusLoading(false);
     }
   }
 
   useEffect(() => {
     void loadProducts();
-    void refreshSyncStatus();
+    void refreshApiLiveness();
   }, []);
 
   const categories = getCategories(products);
@@ -340,7 +341,7 @@ export default function App() {
       setCustomerEmail("");
       setDestinationCountry("");
       setFieldErrors({});
-      void refreshSyncStatus();
+      void refreshApiLiveness();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Permintaan gagal dikirim.");
     } finally {
@@ -419,11 +420,10 @@ export default function App() {
         </View>
 
         <View style={[styles.card, { backgroundColor: "#f7f9f4" }]} accessibilityRole="summary" accessibilityLiveRegion="polite">
-          <SectionTitle eyebrow="SINKRONISASI PEER-TO-PEER">Status lokal</SectionTitle>
-          <Text style={styles.mutedText}>{syncStatusLoading ? "Memeriksa status…" : !syncStatus ? "Status belum tersedia." : !syncStatus.enabled ? "Sinkronisasi tidak diaktifkan." : syncStatus.peerCount > 0 ? `Diaktifkan · ${syncStatus.peerCount} peer dikonfigurasi.` : "Diaktifkan · belum ada peer."}</Text>
-          {syncStatus ? <Text style={[styles.mutedText, { marginTop: 6 }]}>{`Antrean: ${syncStatus.pendingDeliveries} · Perlu coba ulang: ${syncStatus.retryingDeliveries} · Konflik: ${syncStatus.conflicts}`}</Text> : null}
-          <Text style={[styles.mutedText, { fontSize: 9, marginTop: 5 }]}>Ringkasan lokal; koneksi peer tidak diuji langsung.</Text>
-          <Pressable onPress={() => void refreshSyncStatus()} disabled={syncStatusLoading} style={[shareStyles.button, { alignSelf: "flex-start", marginTop: 10 }, syncStatusLoading && shareStyles.buttonDisabled]} accessibilityRole="button" accessibilityLabel="Perbarui status sinkronisasi P2P" accessibilityState={{ disabled: syncStatusLoading }}><Text style={shareStyles.buttonText}>Perbarui status</Text></Pressable>
+          <SectionTitle eyebrow="STATUS API">Ketersediaan layanan</SectionTitle>
+          <Text style={styles.mutedText}>{apiStatusLoading ? "Memeriksa layanan…" : apiAvailable ? "API merespons dan liveness tersedia." : "API belum dapat dijangkau."}</Text>
+          <Text style={[styles.mutedText, { fontSize: 9, marginTop: 5 }]}>Pemeriksaan liveness tidak menampilkan topologi peer, antrean, atau detail operasional sinkronisasi.</Text>
+          <Pressable onPress={() => void refreshApiLiveness()} disabled={apiStatusLoading} style={[shareStyles.button, { alignSelf: "flex-start", marginTop: 10 }, apiStatusLoading && shareStyles.buttonDisabled]} accessibilityRole="button" accessibilityLabel="Perbarui status API" accessibilityState={{ disabled: apiStatusLoading }}><Text style={shareStyles.buttonText}>Periksa ulang</Text></Pressable>
         </View>
 
         <View style={styles.card}>
