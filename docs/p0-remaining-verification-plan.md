@@ -35,7 +35,6 @@ The four intended composite foreign keys are:
 Do not implement DDL until all of the following have written decisions:
 
 - Buyer/Seller application roles are internal staff roles or external counterparty logins.
-- Whether delegated tenant scopes are allowed; if yes, who grants them, their lifecycle, and their legal basis.
 - Whether enterprise-wide NULL site scope is permitted, and the exact roles allowed to use it.
 - Transaction scope creation, suspension, revocation, and post-contract amendment semantics.
 - Legal-party identifiers, country/jurisdiction validation, retention, and signed-contract snapshot requirements.
@@ -65,7 +64,7 @@ For each protected route registration (not just each route family), create table
 1. Authentication: missing, malformed, invalid, expired, revoked identity.
 2. Enterprise context: active membership, absent membership, suspended membership, wrong tenant header, unknown tenant.
 3. Role policy: each of the eight roles on allowed and denied actions.
-4. Transaction policy: buyer-side, seller-side, operating tenant, delegated tenant (only if approved), non-party/non-scoped tenant, unassigned user, revoked assignment.
+4. Transaction policy: buyer-side, seller-side, operating tenant, non-party/non-scoped tenant, unassigned user, revoked assignment. Delegated tenant access is prohibited for MVP/release 1.
 5. Site policy: correct active assigned site, unassigned site, inactive site, foreign-tenant site, wrong site type, revoked site assignment.
 6. Mutation invariants: denied request does not change business rows, audit rows, inventory, outbox, or idempotency state.
 7. Revocation: revoke enterprise role, site assignment, and transaction assignment; immediately verify all relevant route families reject access.
@@ -206,9 +205,24 @@ Implications for the target model:
 
 **What this decision does not approve:**
 
-- It does not approve delegated tenant scopes.
+- Delegated tenant scope is explicitly prohibited for MVP and initial release; no delegated tenant grants, membership, or access path may be implemented in this release scope.
 - It does not approve enterprise-wide NULL-site access or its allowed roles.
 - It does not approve the complete ADR, schema, DDL, migration, backfill, RLS policy, or production/staging change.
 - It does not replace independent Database and Security review.
 
-**Remaining domain decisions:** delegated tenant scope policy; transaction-wide NULL-site policy for internal roles; transaction scope lifecycle; legal-party verification and jurisdiction/retention requirements; immutable contract snapshot and amendment policy. Until these and independent reviews are resolved, ADR P0-001 remains NOT APPROVED and schema blockers remain OPEN.
+**Remaining domain decisions:** transaction-wide NULL-site policy for internal roles; transaction scope lifecycle; legal-party verification and jurisdiction/retention requirements; immutable contract snapshot and amendment policy. Until these and independent reviews are resolved, ADR P0-001 remains NOT APPROVED and schema blockers remain OPEN.
+
+
+## 11. Domain decision update — delegated tenant scope — 2026-11-08
+
+**User-confirmed decision:** delegated tenant scope is **not permitted for MVP or the initial release**.
+
+Implementation and test implications:
+
+- Do not create delegated tenant grants, delegated memberships, or delegated tenant authorization paths in MVP/release 1.
+- A tenant may access a transaction only through its explicitly approved operating-tenant scope and the applicable internal user/site assignments.
+- External Buyer/Seller access remains separately governed through verified transaction-party access assignments; it does not create tenant membership or delegated tenant scope.
+- Authorization tests must assert that a non-operating, non-scoped tenant is denied, including attempts to forge tenant headers or reuse another tenant's transaction identifiers.
+- Any future proposal to introduce delegation requires a separate domain/legal decision, threat-model review, and explicit approval; it is outside this release baseline.
+
+**Scope limitation:** this decision does not approve the complete ADR, NULL-site policy, transaction lifecycle, legal-party verification/retention rules, contract snapshot/amendment policy, DDL, migrations, backfills, RLS, or staging/production changes. ADR P0-001 remains NOT APPROVED pending the remaining decisions and independent Database/Security reviews.
