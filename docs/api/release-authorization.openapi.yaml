@@ -1019,7 +1019,7 @@ components:
         evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
         consumed_at: { $ref: '#/components/schemas/Timestamp' }
         invalidated_at: { $ref: '#/components/schemas/Timestamp' }
-        invalidation_reason: { type: string, description: Server-recorded reason when any material authoritative source version changes.
+        invalidation_reason: { type: string, description: Server-recorded reason when any material authoritative source version changes. }
     ExecuteReleaseInput:
       type: object
       additionalProperties: false
