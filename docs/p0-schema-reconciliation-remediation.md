@@ -83,20 +83,25 @@ The `migrateTenantIsolation(db)` routine creates tenant and transaction tables a
 
 The read-only inspector and synthetic contract test identify the same five gaps:
 
-1. No `transaction_tenant_scopes` bridge to represent the transaction's buyer/seller party tuple.
-2. No composite `(tenant_id, transaction_id)` FK from transaction access assignments to the party bridge.
+1. No `transaction_tenant_scopes` bridge to represent the explicit tenant authorization scope for a transaction. Contractual buyer/seller identity is modeled separately as `legal_parties` in ADR P0-001.
+2. No composite `(tenant_id, transaction_id)` FK from transaction access assignments to `transaction_tenant_scopes`.
 3. No composite `(tenant_id, site_id)` FK from transaction access assignments to supply sites.
-4. No composite `(tenant_id, transaction_id)` FK from transaction site links to the party bridge.
+4. No composite `(tenant_id, transaction_id)` FK from transaction site links to `transaction_tenant_scopes`.
 5. No composite `(tenant_id, site_id)` FK from transaction site links to supply sites.
 
 The existing supply-chain tables demonstrate the intended tenant-scoped composite-FK pattern. The transaction authorization tables have not yet adopted that pattern.
 
 ### Architecture alignment decision still required
 
-The runtime uses one configured `SINGLE_ENTERPRISE_ID`, while transaction records retain buyer/seller party identifiers and the proposed ADR uses a transaction-party bridge. Before a PostgreSQL schema candidate is authored, Security and Database reviewers must confirm whether the counterparty is represented as an external legal-party tenant, an internal enterprise role, or another explicitly governed entity. Do not infer this mapping or backfill operational rows automatically.
+The runtime uses one configured `SINGLE_ENTERPRISE_ID`. ADR P0-001 recommends separating `legal_parties` (contractual buyer/seller identity) from `transaction_tenant_scopes` (tenant authorization boundary). Business/legal owners must still confirm whether Buyer/Seller application roles are internal staff roles or external counterparty logins, and whether any delegated tenant scope is permitted. Do not equate a legal party with a tenant or backfill operational rows automatically.
 
 ### What is complete and what remains blocked
 
 - **Complete at source level:** object inventory, key relationship map, five integrity blockers, and a read-only synthetic test proving inspection does not mutate schema.
 - **Not complete at database level:** actual runtime database identity/path, PostgreSQL DDL/RLS behavior, production/staging schema comparison, data-quality/backfill assessment, and migration/rollback review.
 - No staging database was queried or modified. No operational data was read, exported, or copied. No SQL migration was created or applied.
+
+
+## ADR P0-001 alignment update (2026-11-08)
+
+The source-level bridge recommendation is now `transaction_tenant_scopes(tenant_id, transaction_id, scope_kind)`, not a buyer/seller party bridge. Contractual identity is a separate `legal_parties` entity referenced by transaction buyer/seller fields. The four intended composite FKs are: assignments→tenant scope, site links→tenant scope, assignments→tenant-scoped site, and site links→tenant-scoped site. This remains a recommended logical model only; the ADR is NOT APPROVED and no DDL/migration is authorized. The read-only inspector and schema contract test have been aligned to the scope bridge.
