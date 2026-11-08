@@ -1,6 +1,6 @@
 # Release Authorization OpenAPI 3.1 — Validation Report
 
-**Status:** Draft; automated validation pending.
+**Status:** Automated OpenAPI 3.1 lint and bundle validation passed on the candidate commit.
 **Specification:** [release-authorization.openapi.yaml](./release-authorization.openapi.yaml)
 **Target standard:** OpenAPI 3.1.0
 **Validator:** Redocly CLI 1.34.5 (pinned in GitHub Actions)
@@ -23,7 +23,7 @@ The GitHub Actions workflow `.github/workflows/openapi-validation.yml` runs:
 - `redocly bundle` to resolve references and produce a bundled artifact.
 - A non-empty artifact check.
 
-**Run result:** Pending GitHub Actions execution. This report must be updated with the exact workflow run URL, candidate commit SHA, and pass/fail outcome before the specification is considered parser-validated.
+**Run result:** PASS. [GitHub Actions run #2](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42449745086) completed successfully for candidate commit `916fa9fe48137e367526c6915a7273e0470469bc`. Redocly lint passed; bundle/reference resolution passed; bundled artifact existence check passed.
 
 ## Decisions requiring explicit approval before schema freeze
 
@@ -48,4 +48,4 @@ The GitHub Actions workflow `.github/workflows/openapi-validation.yml` runs:
 
 ## Freeze gate
 
-The schema is **not frozen** until the pinned validator and bundler pass on the exact candidate SHA, all validation findings are resolved, and the decision owners approve the open items above. Independent security, database, legal, financial, and Syariah review remains separate.
+The pinned validator and bundler passed on the exact candidate SHA with no reported OpenAPI structural or reference-resolution findings. The schema is **not frozen**: the decision owners must still approve or resolve the open items above, and independent domain/security reviews remain outstanding. Independent security, database, legal, financial, and Syariah review remains separate.
