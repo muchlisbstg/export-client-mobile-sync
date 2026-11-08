@@ -5,50 +5,104 @@ import os from "node:os";
 import path from "node:path";
 import { createServer } from "../server/index.mjs";
 
-test("P0 CORS preflight permits only configured origins and supported API methods", async () => {
+const allowedOrigin = "https://app.example.test";
+const allowedHeaders = [
+  "authorization",
+  "content-type",
+  "idempotency-key",
+  "x-active-tenant-id",
+  "x-request-id",
+];
+
+async function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "p0-cors-preflight-"));
   const service = createServer({
     host: "127.0.0.1",
     port: 0,
     dbPath: path.join(dir, "api.sqlite"),
-    webOrigins: "https://app.example.test",
+    webOrigins: allowedOrigin,
   });
+  const started = await service.start();
+  return {
+    base: `http://127.0.0.1:${started.port}`,
+    close: async () => {
+      await service.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
 
+test("CORS preflight allows only configured origins, API methods, and required headers", async () => {
+  const app = await fixture();
   try {
-    const started = await service.start();
-    const base = `http://127.0.0.1:${started.port}`;
-
     for (const method of ["GET", "POST", "PATCH", "DELETE"]) {
-      const response = await fetch(base + "/api/v1/preflight-contract", {
+      const response = await fetch(app.base + "/api/v1/transactions/tx-1", {
         method: "OPTIONS",
         headers: {
-          Origin: "https://app.example.test",
+          Origin: allowedOrigin,
           "Access-Control-Request-Method": method,
-          "Access-Control-Request-Headers": "authorization,content-type,idempotency-key,x-active-tenant-id,x-request-id",
+          "Access-Control-Request-Headers": allowedHeaders.join(", "),
         },
       });
-      assert.equal(response.status, 204, `preflight for ${method} must succeed for configured origin`);
-      assert.equal(response.headers.get("access-control-allow-origin"), "https://app.example.test");
-      const allowedMethods = response.headers.get("access-control-allow-methods") ?? "";
-      assert.ok(allowedMethods.split(/,\s*/).includes(method), `${method} must be listed in Access-Control-Allow-Methods`);
-      const allowedHeaders = response.headers.get("access-control-allow-headers") ?? "";
-      assert.match(allowedHeaders.toLowerCase(), /authorization/);
-      assert.match(allowedHeaders.toLowerCase(), /content-type/);
-      assert.match(allowedHeaders.toLowerCase(), /idempotency-key/);
-      assert.match(allowedHeaders.toLowerCase(), /x-active-tenant-id/);
-      assert.match(allowedHeaders.toLowerCase(), /x-request-id/);
+      assert.equal(response.status, 204, `preflight must allow ${method}`);
+      assert.equal(response.headers.get("access-control-allow-origin"), allowedOrigin);
+      const methods = new Set((response.headers.get("access-control-allow-methods") ?? "").split(",").map((x) => x.trim()));
+      assert.ok(methods.has(method));
+      const headers = new Set((response.headers.get("access-control-allow-headers") ?? "").toLowerCase().split(",").map((x) => x.trim()));
+      for (const header of allowedHeaders) assert.ok(headers.has(header), `missing allowed header ${header}`);
+      assert.match(response.headers.get("vary") ?? "", /Origin/i);
+      assert.match(response.headers.get("vary") ?? "", /Access-Control-Request-Method/i);
+      assert.match(response.headers.get("vary") ?? "", /Access-Control-Request-Headers/i);
+      assert.equal(response.headers.get("access-control-max-age"), "600");
+      assert.equal(response.headers.get("access-control-allow-credentials"), null);
     }
+  } finally {
+    await app.close();
+  }
+});
 
-    const denied = await fetch(base + "/api/v1/preflight-contract", {
+test("CORS rejects origins that are not explicitly configured", async () => {
+  const app = await fixture();
+  try {
+    const response = await fetch(app.base + "/health", {
+      headers: { Origin: "https://attacker.example.test" },
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "origin_not_allowed" });
+    assert.equal(response.headers.get("access-control-allow-origin"), null);
+  } finally {
+    await app.close();
+  }
+});
+
+test("CORS preflight rejects methods outside the explicit allowlist", async () => {
+  const app = await fixture();
+  try {
+    const response = await fetch(app.base + "/api/v1/transactions", {
+      method: "OPTIONS",
+      headers: { Origin: allowedOrigin, "Access-Control-Request-Method": "TRACE" },
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "cors_method_not_allowed" });
+  } finally {
+    await app.close();
+  }
+});
+
+test("CORS preflight rejects unapproved request headers", async () => {
+  const app = await fixture();
+  try {
+    const response = await fetch(app.base + "/api/v1/transactions", {
       method: "OPTIONS",
       headers: {
-        Origin: "https://untrusted.example.test",
-        "Access-Control-Request-Method": "DELETE",
+        Origin: allowedOrigin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,x-untrusted-header",
       },
     });
-    assert.equal(denied.status, 403, "unconfigured origins must remain denied");
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "cors_header_not_allowed" });
   } finally {
-    await service.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await app.close();
   }
 });
