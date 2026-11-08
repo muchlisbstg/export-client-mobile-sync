@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer } from "../server/index.mjs";
-import { chromium } from "playwright";
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE_PATH ?? "playwright");
 
 function startOriginServer() {
   const server = http.createServer((_req, res) => {
