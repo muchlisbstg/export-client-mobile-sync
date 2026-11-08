@@ -1,96 +1,118 @@
-# ADR P0-001 — Transaction party bridge and tenant-scoped composite integrity
+# ADR P0-001 — Separate contractual parties from tenant authorization scopes
 
-- **Status:** Proposed — requires domain-owner, database-reviewer, and security-reviewer approval
+- **Status:** Recommended architecture; pending business/legal, database, and security approval
 - **Date:** 2026-11-08
-- **Scope:** Transaction-party membership and integrity constraints for `transaction_access_assignments` and `transaction_site_links`
-- **Implementation:** None. This ADR does not contain executable DDL and authorizes no migration.
+- **Scope:** Transaction party identity and four tenant-scoped composite foreign keys
+- **Implementation:** Design and read-only contract inspection only. No DDL or migration is included or authorized.
 
-## Context
+## Decision recommendation
 
-A commercial transaction identifies a buyer enterprise and a seller enterprise through `commercial_transactions.buyer_tenant_id` and `seller_tenant_id`. A transaction access assignment or site link is scoped by `tenant_id`, but the current foreign keys independently validate the tenant and transaction identifiers. They do not prove that the tenant is one of the two parties to that transaction. Site references likewise need to prove that the site belongs to the same tenant as the assignment or link.
+Adopt a **single operating enterprise with separately modeled external contractual parties**. Do not use `tenant_id` as a proxy for buyer/seller legal identity unless the domain owner explicitly confirms that every buyer and seller is a platform tenant.
 
-The current schema inspector reports five blockers:
-1. `transaction_enterprise_parties` bridge missing.
-2. Assignment `(tenant_id, transaction_id)` composite FK missing.
-3. Assignment `(tenant_id, site_id)` composite FK missing.
-4. Site-link `(tenant_id, transaction_id)` composite FK missing.
-5. Site-link `(tenant_id, site_id)` composite FK missing.
+This aligns with the current deployment blueprint's product direction: one configured operating enterprise, internal role-based operations, and external buyer/seller counterparties. It also avoids conflating three distinct concepts:
 
-## Proposed decision
+1. **Legal party:** the organization or person named as buyer/seller in the commercial contract.
+2. **Tenant/enterprise:** an authorization and data-isolation boundary for users and internal operations.
+3. **Transaction scope:** the tenant(s) explicitly permitted to access and operate on a transaction.
 
-Use an explicit transaction-party bridge that represents the *enterprise legal party* to the transaction. Do not use a user, membership, role assignment, warehouse, supplier operator, or free-form external counterparty as the tenant party identity.
+### Target logical model
 
-Proposed logical relation:
+**A. Contractual party registry**
 
 ```text
-transaction_enterprise_parties
-  tenant_id       -> tenants.id
-  transaction_id  -> commercial_transactions.id
-  party_role      -> buyer | seller
-  created_at
-  PRIMARY KEY (tenant_id, transaction_id)
-  UNIQUE (transaction_id, party_role)
+legal_parties
+  id, legal_name, country_code, registration_reference, status, created_at
+
+commercial_transactions
+  id
+  buyer_party_id  -> legal_parties.id
+  seller_party_id -> legal_parties.id
+  operating_tenant_id -> tenants.id
+  status, created_at
 ```
 
-The bridge is a materialized, constrained representation of the two party columns already on the transaction:
-- `party_role = buyer` must have `tenant_id = commercial_transactions.buyer_tenant_id`.
-- `party_role = seller` must have `tenant_id = commercial_transactions.seller_tenant_id`.
-- A transaction must have exactly one buyer-party row and one seller-party row once finalized for access-control use.
-- The existing `CHECK (buyer_tenant_id <> seller_tenant_id)` remains the default anti-self-dealing rule. Any exception requires an explicit legal/business decision, not a technical bypass.
-- The bridge must not become a source of truth independent of the transaction party columns. Insert/update/delete synchronization and transaction lifecycle semantics must be enforced atomically using database constraints/triggers or a reviewed normalized redesign.
+- Buyer and seller are legal-party references, not automatically tenants.
+- `operating_tenant_id` identifies the enterprise operating the transaction in the single-enterprise model.
+- The same legal party may participate in multiple transactions; party identity must not be duplicated per transaction.
+- Preserve immutable party snapshots/contract version references where legal documents require the identity at signing time.
+- A transaction must not silently change buyer/seller after contract approval; amendments require explicit actor, reason, version, audit, and counterparty consent rules.
 
-Then enforce:
-- `transaction_access_assignments(tenant_id, transaction_id)` → `transaction_enterprise_parties(tenant_id, transaction_id)`.
-- `transaction_site_links(tenant_id, transaction_id)` → `transaction_enterprise_parties(tenant_id, transaction_id)`.
-- `transaction_access_assignments(tenant_id, site_id)` → `supply_sites(tenant_id, id)`.
-- `transaction_site_links(tenant_id, site_id)` → `supply_sites(tenant_id, id)`.
+**B. Tenant transaction scope bridge**
 
-Both referenced composite keys must be explicitly UNIQUE/PRIMARY KEY. For assignment `site_id`, NULL remains allowed only for roles whose authorization policy permits transaction-wide scope (buyer, seller, auditor); operational roles supplier, warehouse, QC, and logistics require a non-NULL site. A composite FK with nullable `site_id` does not validate a site when the child key is NULL, so the role/site CHECK or equivalent trigger must enforce the policy. Site links always require a site.
+```text
+transaction_tenant_scopes
+  tenant_id       -> tenants.id
+  transaction_id  -> commercial_transactions.id
+  scope_kind      -> operating | delegated
+  created_at
+  PRIMARY KEY (tenant_id, transaction_id)
+```
 
-## Alternatives considered
+This bridge is an authorization scope, not a statement that the tenant is the buyer or seller. In the current single-enterprise configuration, the operating tenant receives the `operating` scope. Additional `delegated` tenant scopes require an explicit contract, legal, and security policy; they must never be inferred from a party name or client-supplied tenant header.
 
-1. **Two separate tenant and transaction FKs only:** rejected; it cannot enforce that the tenant is a party to the referenced transaction.
-2. **Store party role only on assignments:** rejected; duplicates domain truth across assignments and cannot protect site links or other future child tables.
-3. **Treat every supplier/operator tenant as a buyer/seller party:** rejected; operational participation is not equivalent to contractual legal-party status.
-4. **External legal-party registry:** deferred. If buyers/sellers may be non-platform organizations without a tenant account, a governed `legal_parties` entity and explicit tenant-to-legal-party mapping must be designed before implementation. Do not overload `tenant_id` with an external party identifier.
+**C. Transaction party access**
 
-## Domain decisions required before approval
+If external buyer/seller users are allowed to sign in, model their access separately, e.g. `transaction_party_access_assignments(transaction_id, legal_party_id, user_id, party_role, status)`, with verified identity-to-party membership, party-role consistency, revocation, audit, and non-disclosing reads. Do not insert external counterparties into the operating tenant's `tenant_memberships` merely to make authorization queries pass.
 
-The product/legal owner must confirm:
-1. Are buyer and seller always platform `tenants`, or can a contracting party exist outside the platform?
-2. Does one tenant ever act as both buyer and seller in one transaction? The proposed default rejects this.
-3. When is the party bridge created: draft transaction creation, contract approval, or another lifecycle transition?
-4. Can party identity change after contract approval? If so, what amendment, audit, and consent process applies?
-5. Are operational suppliers/logistics providers strictly delegated operators, or can they be contractual parties? The proposed model treats them as operators unless separately recorded as buyer/seller.
-6. Is enterprise-wide NULL site scope allowed for buyer, seller, and auditor roles only? Confirm with the authorization policy owner.
+If Buyer/Seller are only internal employee roles in the current release, keep them as internal enterprise roles and do not enable external party login until the separate party-access model is implemented and reviewed.
+
+## Composite FK decision
+
+Use the scope bridge for tenant isolation and the existing tenant-scoped site key for site isolation:
+
+1. `transaction_access_assignments(tenant_id, transaction_id)` → `transaction_tenant_scopes(tenant_id, transaction_id)`.
+2. `transaction_site_links(tenant_id, transaction_id)` → `transaction_tenant_scopes(tenant_id, transaction_id)`.
+3. `transaction_access_assignments(tenant_id, site_id)` → `supply_sites(tenant_id, id)`.
+4. `transaction_site_links(tenant_id, site_id)` → `supply_sites(tenant_id, id)`.
+
+The referenced composite pairs must be explicit PRIMARY KEY/UNIQUE keys. The five source-level blockers are therefore resolved conceptually by introducing the scope bridge and these four composite FKs.
+
+### Site nullability
+
+- `transaction_site_links.site_id` remains NOT NULL.
+- `transaction_access_assignments.site_id` may be NULL only for roles with explicitly approved transaction-wide scope (provisionally buyer, seller, auditor, and enterprise_admin).
+- Operational roles (supplier, warehouse, QC, logistics) require a non-NULL site and an active matching `transaction_site_links` row.
+- A composite FK does not validate a nullable child key when `site_id` is NULL; add a role/site CHECK or trigger and test it in both SQLite and PostgreSQL.
+
+## Why not use transaction_enterprise_parties as the scope bridge?
+
+That name implies that every scoped tenant is a contractual buyer/seller. It is incorrect for a single operating enterprise that may serve external counterparties who do not have tenant accounts. Use `transaction_tenant_scopes` for access scope and `legal_parties` for contractual identity. If the domain owner confirms a true multi-tenant buyer/seller model, an explicit party-to-tenant mapping can be added without collapsing the two concepts.
+
+## Domain decisions requiring written confirmation
+
+1. Confirm the product model is one operating enterprise plus external buyer/seller legal parties.
+2. Confirm whether Buyer/Seller roles in the current release are internal staff roles or external counterparty users.
+3. Confirm whether any delegated tenant can operate on a transaction and under what contract/consent.
+4. Confirm transaction creation and scope-bridge lifecycle (draft, accepted, contract-approved).
+5. Confirm whether legal party identity can change after contract approval and the amendment process.
+6. Confirm enterprise-wide NULL site scope and allowed roles.
+7. Confirm required legal identifiers, jurisdiction/country rules, retention, and immutable signed-contract snapshots with qualified counsel.
 
 ## SQLite and PostgreSQL parity
 
-- Implement the same party-role semantics and composite-key integrity in SQLite and PostgreSQL.
-- PostgreSQL must have explicit RLS policies for the bridge and both child tables. RLS is not a substitute for FKs.
-- Test both buyer-side and seller-side positive inserts, non-party tenant denial, foreign-site denial, mismatched transaction/site tuples, duplicate party roles, revocation, and NULL-site role policy.
-- Test under the actual application DB roles, including an unprivileged role; owner/superuser tests alone do not prove RLS.
-- Include deferred/transactional lifecycle behavior if transaction creation and party-bridge creation occur in one transaction.
+- Implement equivalent scope-bridge and composite-FK constraints in SQLite and PostgreSQL.
+- PostgreSQL RLS must cover `transaction_tenant_scopes`, assignments, site links, legal parties, and any party-access table. RLS is defense in depth, not a substitute for FKs.
+- Test operating and delegated scope positive cases; non-scoped tenant denial; foreign-site denial; mismatched transaction/site tuples; duplicate scope rows; NULL-site policy; party-role mismatch; membership revocation; and non-disclosing cross-tenant reads.
+- Run tests under the actual least-privilege application DB role. Owner/superuser tests do not prove RLS.
+- Require PostgreSQL integration tests; SQLite tests alone are not evidence of PostgreSQL behavior.
 
 ## Migration and operational safeguards
 
-No migration is authorized by this ADR. Before a migration PR:
-- inventory existing rows and classify orphan/mismatched assignments and site links without guessing ownership;
-- produce a deterministic remediation report and explicit manual-resolution queue;
-- design additive migration, backfill, validation, enforcement, and rollback phases;
-- prove SQLite and PostgreSQL parity with isolated synthetic fixtures;
-- include lock/availability, index-build, deployment-order, rollback, and backup considerations;
-- obtain database reviewer approval and security reviewer concurrence.
+No migration is authorized. Before a migration PR:
+- inventory existing buyer/seller tenant values and determine whether they represent legal parties, platform tenants, or internal operational records;
+- do not automatically convert legacy tenant IDs into legal-party IDs;
+- produce deterministic mismatch/orphan reports and a manual-resolution queue;
+- design additive migration, backfill, validation, enforcement, rollback, and deployment ordering;
+- review data protection, legal-party retention, and contract amendment/audit semantics;
+- obtain independent database review and security concurrence.
 
-## Acceptance criteria
+## Acceptance
 
-- [ ] Domain/legal owner confirms all six domain decisions above.
-- [ ] Database reviewer approves ERD, key design, triggers/constraints, RLS, migration, and rollback plan.
-- [ ] Security reviewer confirms tenant and site isolation, including NULL-site semantics.
-- [ ] Schema inspector reports zero blockers on an isolated candidate schema.
+- [ ] Business/legal owner confirms the product/party model and lifecycle decisions above.
+- [ ] Independent database reviewer approves ERD, constraints, indexes, RLS, migration, and rollback.
+- [ ] Independent security reviewer approves tenant scope, party access, NULL-site policy, and revocation.
+- [ ] Read-only schema inspector reports zero blockers on an isolated candidate schema.
 - [ ] SQLite tests and PostgreSQL integration/RLS tests pass on one exact SHA.
-- [ ] No staging/production DDL is run without separate explicit authorization.
+- [ ] No staging/production DDL without separate explicit authorization.
 
-## Decision
-
-**Not approved.** This is a concrete technical recommendation for review, not a binding business/legal decision. Keep the five schema blockers OPEN until the domain owner and independent reviewers approve the final design.
+**Decision state: NOT APPROVED.** This is the recommended target architecture, not a binding legal/business decision. Keep all five schema blockers OPEN until the domain owner and independent reviewers approve it.
