@@ -34,7 +34,8 @@ The four intended composite foreign keys are:
 
 Do not implement DDL until all of the following have written decisions:
 
-- Buyer/Seller application roles are internal staff roles or external counterparty logins.
+- Buyer/Seller external counterparty identity and access separation is confirmed in section 10.
+- Role-specific NULL-site policy is confirmed in section 12; auditor scope remains a separate decision.
 - Transaction scope creation, suspension, revocation, and post-contract amendment semantics.
 - Legal-party identifiers, country/jurisdiction validation, retention, and signed-contract snapshot requirements.
 - Independent Database Reviewer and independent Security Reviewer are identified and approve the exact candidate SHA.
@@ -224,7 +225,7 @@ Implementation and test implications:
 - Authorization tests must assert that a non-operating, non-scoped tenant is denied, including attempts to forge tenant headers or reuse another tenant's transaction identifiers.
 - Any future proposal to introduce delegation requires a separate domain/legal decision, threat-model review, and explicit approval; it is outside this release baseline.
 
-**Scope limitation:** this decision does not approve the complete ADR, NULL-site policy, transaction lifecycle, legal-party verification/retention rules, contract snapshot/amendment policy, DDL, migrations, backfills, RLS, or staging/production changes. ADR P0-001 remains NOT APPROVED pending the remaining decisions and independent Database/Security reviews.
+**Scope limitation:** this decision does not approve the complete ADR, transaction lifecycle, legal-party verification/retention rules, contract snapshot/amendment policy, DDL, migrations, backfills, RLS, or staging/production changes. ADR P0-001 remains NOT APPROVED pending the remaining decisions and independent Database/Security reviews.
 
 
 ## 12. Domain decision update — NULL site policy — 2026-11-08
@@ -235,6 +236,7 @@ Policy boundaries:
 
 - `enterprise_admin`: NULL site is permitted only for explicitly authorized enterprise-administration capabilities and only within the user's active `tenant_id` and approved transaction scope. It does not grant cross-tenant access, unrestricted transaction access, or permission to bypass endpoint-specific authorization and audit requirements.
 - `supplier`, `warehouse`, `qc`, and `logistics`: NULL site is prohibited. The applicable site assignment must exist, be active, belong to the same tenant, and satisfy the operation's site-type and source/destination requirements.
+- `auditor`: this approval does not decide whether read-only audit access is enterprise-wide or site-scoped. Until separately approved, do not infer enterprise-wide access from `site_id = NULL`; enforce only an explicitly granted, tested scope.
 - Operational routes must fail closed when site context is absent, inactive, foreign-tenant, wrong-type, or revoked. No fallback from a missing/invalid site to enterprise-wide access is allowed.
 - External Buyer/Seller users are not internal roles and continue to use separately verified transaction-party access assignments, not NULL-site internal assignments.
 - Database constraints and authorization tests must enforce the role-specific NULL policy; PostgreSQL FK/RLS integration must verify the behavior, not SQLite tests alone.
