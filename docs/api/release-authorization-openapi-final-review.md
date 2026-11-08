@@ -1,7 +1,7 @@
 # OpenAPI 3.1 — Final Review Readiness & Decision Register
 
 **Review target:** PR #131, branch `docs/p0-001-release-authorization-openapi-2026-11-08`
-**Latest schema correction commit:** `bba687468613f0f69f0a8de50dc3b27b25d282ad` (candidate YAML blob `1c0675e66de5f4834fb5a1c2a8280bbe4a8326eb`). A subsequent report commit will advance the PR head; validation must target the final resulting head SHA.
+**Latest schema correction commit:** `482f342ed4a6e62d1d00624127b39f34287e264f` (candidate YAML blob `b275e7357ce4f2253a73db118620b8b37ff15793`). A subsequent report commit will advance the PR head; validation must target the final resulting head SHA.
 **Specification blob:** `bf18f16b6dbdbc590cba43671f5632a8bf733b75`
 **Review outcome:** NOT READY TO FREEZE
 **Scope:** Contract semantics and governance review only. No DDL, migration, application implementation, merge, or deployment.
@@ -81,3 +81,8 @@ At candidate schema commit `bba687468613f0f69f0a8de50dc3b27b25d282ad`:
 - Approval request and response schemas are now distinct: caller sends `expected_versions`; server returns authoritative `evaluated_versions`.
 - Execution lookup description now aligns with typed `NOT_STARTED` rather than treating absence of an attempt as 404.
 - Automated OpenAPI lint/bundle remains pending on the final PR head; this manual structural inventory is not a substitute for CI or independent review.
+
+
+## CI failure and correction record
+
+OpenAPI Validation run #18 (GitHub Actions run ID `42450388713`) failed at `redocly lint` before bundling. The exact parser diagnostic was a missing closing brace in the inline `ReleaseAuthorization.invalidation_reason` schema at YAML line 1023. The YAML syntax was corrected in commit `482f342ed4a6e62d1d00624127b39f34287e264f`. This correction is not considered validated until a new lint + bundle run succeeds against the final PR head.
