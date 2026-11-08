@@ -76,18 +76,27 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug
+      - name: Create Android build manifest
+        shell: bash
+        run: |
+          {
+            echo "candidate_sha=$(git rev-parse HEAD)"
+            echo "lockfile_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
+            echo "java_version=$(java -version 2>&1 | head -n1)"
+          } > android-build-manifest.txt
       - uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk-${{ env.CANDIDATE_SHA }}
           path: |
             android/app/build/outputs/apk/debug/*.apk
+            android-build-manifest.txt
             lockfile.sha256
           if-no-files-found: error
           retention-days: 14
 
   ios:
     name: iOS Simulator build
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,6 +112,17 @@ jobs:
           test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           sha256sum package-lock.json | tee lockfile.sha256
           npm ci
+      - name: Verify Swift toolchain compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift_version="$(swift --version | awk '/Apple Swift version/ {print $3; exit}')"
+          echo "Swift toolchain: $swift_version"
+          if [ -z "$swift_version" ] || [ "$(printf '%s\n' "6.2" "$swift_version" | sort -V | head -n1)" != "6.2" ]; then
+            echo "::error::Swift 6.2 or newer is required; found '$swift_version'"
+            exit 1
+          fi
       - name: iOS prebuild
         run: npx expo prebuild --platform ios --no-install
       - name: Install CocoaPods
@@ -119,12 +139,19 @@ jobs:
           app_path="$(find ios/build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$app_path"
           echo "$app_path" > ios-simulator-app-path.txt
+          {
+            echo "candidate_sha=$(git rev-parse HEAD)"
+            echo "lockfile_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
+            echo "swift_version=$(swift --version | awk '/Apple Swift version/ {print $3; exit}')"
+            echo "xcode_version=$(xcodebuild -version | tr '\n' ' ')"
+          } > ios-build-manifest.txt
       - uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-app-${{ env.CANDIDATE_SHA }}
           path: |
             ios/build/Build/Products/Debug-iphonesimulator/*.app
             ios-simulator-app-path.txt
+            ios-build-manifest.txt
             lockfile.sha256
           if-no-files-found: error
           retention-days: 14
