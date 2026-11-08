@@ -145,15 +145,45 @@ export function createServer(options = {}) {
 
   const allowedOrigins = String(options.webOrigins ?? process.env.WEB_ORIGINS ?? "http://localhost:5173")
     .split(",").map((origin) => origin.trim()).filter(Boolean);
+  const allowedCorsMethods = new Set(["GET", "POST", "PATCH", "DELETE"]);
+  const allowedCorsHeaders = new Set([
+    "authorization",
+    "content-type",
+    "idempotency-key",
+    "x-active-tenant-id",
+    "x-request-id",
+  ]);
   app.use((req, res, next) => {
     const origin = req.get("origin");
     if (!origin) return next();
     if (!allowedOrigins.includes(origin)) return res.status(403).json({ error: "origin_not_allowed" });
+
     res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Active-Tenant-Id, X-Request-Id");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-    if (req.method === "OPTIONS") return res.sendStatus(204);
+    res.setHeader("Vary", req.method === "OPTIONS"
+      ? "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+      : "Origin");
+
+    if (req.method === "OPTIONS") {
+      const requestedMethod = String(req.get("access-control-request-method") ?? "").trim().toUpperCase();
+      if (!allowedCorsMethods.has(requestedMethod)) {
+        return res.status(403).json({ error: "cors_method_not_allowed" });
+      }
+      const requestedHeaders = String(req.get("access-control-request-headers") ?? "")
+        .split(",").map((header) => header.trim().toLowerCase()).filter(Boolean);
+      if (requestedHeaders.some((header) => !allowedCorsHeaders.has(header))) {
+        return res.status(403).json({ error: "cors_header_not_allowed" });
+      }
+      res.setHeader("Access-Control-Allow-Methods", [...allowedCorsMethods].join(", "));
+      res.setHeader("Access-Control-Allow-Headers", [
+        "Authorization",
+        "Content-Type",
+        "Idempotency-Key",
+        "X-Active-Tenant-Id",
+        "X-Request-Id",
+      ].join(", "));
+      res.setHeader("Access-Control-Max-Age", "600");
+      return res.sendStatus(204);
+    }
     return next();
   });
   app.use(express.json({ limit: "16kb" }));
