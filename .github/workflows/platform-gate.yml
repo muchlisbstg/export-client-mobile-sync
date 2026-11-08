@@ -117,9 +117,16 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -version
-          swift_version="$(swift --version | awk '/Apple Swift version/ {print $3; exit}')"
-          echo "Swift toolchain: $swift_version"
-          if [ -z "$swift_version" ] || [ "$(printf '%s\n' "6.2" "$swift_version" | sort -V | head -n1)" != "6.2" ]; then
+          swift_version_output="$(swiftc --version)"
+          printf '%s\n' "$swift_version_output"
+          swift_version="$(printf '%s\n' "$swift_version_output" | sed -nE 's/^Apple Swift version ([0-9]+(\.[0-9]+){1,2}).*/\1/p' | head -n1)"
+          echo "Swift compiler version: $swift_version"
+          if [[ ! "$swift_version" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+            echo "::error::Unable to parse the Apple Swift compiler version"
+            exit 1
+          fi
+          IFS=. read -r swift_major swift_minor _ <<< "$swift_version"
+          if (( swift_major < 6 || (swift_major == 6 && swift_minor < 2) )); then
             echo "::error::Swift 6.2 or newer is required; found '$swift_version'"
             exit 1
           fi
@@ -142,7 +149,9 @@ jobs:
           {
             echo "candidate_sha=$(git rev-parse HEAD)"
             echo "lockfile_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
-            echo "swift_version=$(swift --version | awk '/Apple Swift version/ {print $3; exit}')"
+            swift_version="$(swiftc --version | sed -nE 's/^Apple Swift version ([0-9]+(\.[0-9]+){1,2}).*/\1/p' | head -n1)"
+            test -n "$swift_version"
+            echo "swift_version=$swift_version"
             echo "xcode_version=$(xcodebuild -version | tr '\n' ' ')"
           } > ios-build-manifest.txt
       - uses: actions/upload-artifact@v4
