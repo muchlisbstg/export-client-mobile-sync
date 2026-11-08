@@ -1,5 +1,5 @@
 name: Platform Gate — same candidate SHA
-run-name: "Platform gate candidate 36943673b956c94c80d5e322adf0719b33bc2f80"
+run-name: "Platform gate audit refresh — candidate 36943673b956c94c80d5e322adf0719b33bc2f80"
 
 on:
   pull_request:
