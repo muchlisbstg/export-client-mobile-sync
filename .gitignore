@@ -3,8 +3,12 @@ node_modules/
 dist/
 web-build/
 server/data/
+
+# Local environment files (never commit actual values/secrets).
 .env
+.env.api
 .env.*
 !.env.example
 !.env.api.example
+
 .DS_Store
