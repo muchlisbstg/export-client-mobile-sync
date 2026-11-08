@@ -566,7 +566,7 @@ components:
       format: date-time
     DecimalQuantity:
       type: string
-      pattern: '^(0|[1-9][0-9]*)(\\.[0-9]+)?$'
+      pattern: '^(0|[1-9][0-9]*)(\.[0-9]+)?$'
       description: Decimal string to avoid binary floating-point quantity errors.
     CurrencyCode:
       type: string
@@ -640,7 +640,7 @@ components:
     EvaluatedVersions:
       type: object
       additionalProperties: false
-      required: [contract_snapshot_id, scope_version, payment_ledger_version, evidence_register_version, policy_version]
+      required: [contract_snapshot_id, scope_version, scope_status, payment_ledger_version, evidence_register_version, policy_version]
       properties:
         contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
         scope_version: { type: integer, minimum: 1 }
@@ -708,7 +708,7 @@ components:
             approval_id: { $ref: '#/components/schemas/Identifier' }
             request_id: { $ref: '#/components/schemas/Identifier' }
             actor_id: { $ref: '#/components/schemas/Identifier' }
-            status: { type: string, enum: [RECORDED, INVALIDATED, EXPIRED] }
+            status: { type: string, enum: [RECORDED, REJECTED, INVALIDATED, EXPIRED] }
             approved_at: { $ref: '#/components/schemas/Timestamp' }
             expires_at:
               allOf: [{ $ref: '#/components/schemas/Timestamp' }]
@@ -823,12 +823,13 @@ components:
         note: { type: string, maxLength: 1000 }
     ReleaseExecution:
       type: object
-      required: [execution_id, authorization_id, request_id, status, committed_at, idempotency_key]
+      required: [execution_id, authorization_id, request_id, status, completed_at, idempotency_key]
       properties:
         execution_id: { $ref: '#/components/schemas/Identifier' }
         authorization_id: { $ref: '#/components/schemas/Identifier' }
         request_id: { $ref: '#/components/schemas/Identifier' }
         status: { type: string, enum: [COMMITTED, FAILED] }
+        completed_at: { $ref: '#/components/schemas/Timestamp' }
         committed_at: { $ref: '#/components/schemas/Timestamp' }
         idempotency_key: { type: string }
         audit_event_id: { $ref: '#/components/schemas/Identifier' }
