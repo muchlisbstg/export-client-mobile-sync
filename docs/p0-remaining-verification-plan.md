@@ -190,3 +190,25 @@ Additional release gates remain separate: dependency/CVE review, secrets/environ
 | iOS Simulator on latest SHA | No latest-SHA evidence confirmed | OPEN |
 | Expo Web on latest SHA | No latest-SHA evidence confirmed | OPEN |
 | PR #118 / #119 | Closed, not merged | Complete as administrative cleanup only |
+
+
+## 10. Domain decision update — 2026-11-08
+
+**User-confirmed decision:** Buyer and Seller are **external counterparty users**, not internal enterprise staff roles.
+
+Implications for the target model:
+
+- Keep contractual Buyer/Seller identity in `legal_parties`.
+- Do not add external Buyer/Seller users to the operating enterprise's `tenant_memberships` solely to authorize transaction access.
+- Introduce/retain a separately governed party-access relationship (for example `transaction_party_access_assignments(transaction_id, legal_party_id, user_id, party_role, status)`) with verified user-to-legal-party membership, buyer/seller role consistency, explicit transaction binding, revocation, audit, and non-disclosing reads.
+- Internal enterprise roles remain distinct from external counterparty party roles. External counterparty permissions must not inherit internal supplier/warehouse/QC/logistics/admin permissions.
+- A legal party may be external and have no tenant account. Do not infer a tenant scope from buyer/seller identity.
+
+**What this decision does not approve:**
+
+- It does not approve delegated tenant scopes.
+- It does not approve enterprise-wide NULL-site access or its allowed roles.
+- It does not approve the complete ADR, schema, DDL, migration, backfill, RLS policy, or production/staging change.
+- It does not replace independent Database and Security review.
+
+**Remaining domain decisions:** delegated tenant scope policy; transaction-wide NULL-site policy for internal roles; transaction scope lifecycle; legal-party verification and jurisdiction/retention requirements; immutable contract snapshot and amendment policy. Until these and independent reviews are resolved, ADR P0-001 remains NOT APPROVED and schema blockers remain OPEN.
