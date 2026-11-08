@@ -1,6 +1,6 @@
 # Release Authorization OpenAPI 3.1 — Validation Report
 
-**Status:** Automated OpenAPI 3.1 lint and bundle validation passed on the candidate commit.
+**Status:** Previous candidate validation is historical only. Validation of the corrected candidate is pending against the current PR head; do not treat the earlier PASS as covering the new YAML.
 **Specification:** [release-authorization.openapi.yaml](./release-authorization.openapi.yaml)
 **Target standard:** OpenAPI 3.1.0
 **Validator:** Redocly CLI 1.34.5 (pinned in GitHub Actions)
@@ -23,20 +23,28 @@ The GitHub Actions workflow `.github/workflows/openapi-validation.yml` runs:
 - `redocly bundle` to resolve references and produce a bundled artifact.
 - A non-empty artifact check.
 
-**Run result:** PASS. [GitHub Actions run #2](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42449745086) completed successfully for candidate commit `916fa9fe48137e367526c6915a7273e0470469bc`. Redocly lint passed; bundle/reference resolution passed; bundled artifact existence check passed.
+**Historical run (not current-candidate evidence):** [GitHub Actions run #2](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42449745086) completed successfully for candidate commit `916fa9fe48137e367526c6915a7273e0470469bc`. Redocly lint, bundle/reference resolution, and artifact existence passed on that earlier candidate only.
 
-## Decisions requiring explicit approval before schema freeze
+**Corrected candidate:** YAML correction commit `bf336164398893723b9adb9080de0cd47628fbb8`; blob `ae248b0d7d894d5354cce842c27b7082f5f68735`. The PR head advances when this report and workflow trigger are committed. The final validation record must name the exact resulting head SHA and run ID.
+
+## Approved domain/API decisions
+
+The user explicitly approved the seven recommendations for OAS-001, OAS-003, OAS-007, OAS-010, OAS-011, OAS-012 and OAS-013 as domain/API decisions. Their approval is recorded in `release-authorization-openapi-final-review.md`. This is not a substitute for independent Security, Legal, Database, Engineering, Finance, Syariah or domain reviewer sign-off.
+
+Candidate schema corrections now include: tenant-scoped read-only request listing; seller instruction separate from party approval and append-only supersession/withdrawal; server-owned scope version/status semantics; split suspension clearance submission and verification; clarified approval expected/evaluated version separation and decision timestamps; typed `NOT_STARTED` idempotency reconciliation; durable `FAILED` semantics; server-calculated authorization expiry/invalidation; and transactional outbox commit semantics.
+
+## Remaining independent approvals and contract verification
 
 | ID | Decision | Current treatment | Required owner |
 |---|---|---|---|
-| OAS-001 | Keep request collection/list endpoint | Included as read-only convenience | Product/API owner |
-| OAS-003 | Exact set of contractual party approval types beyond seller and conditional buyer | Extensible string; server policy defines requirements | Legal + business owner |
+| OAS-001 | Keep request collection/list endpoint | User-approved; tenant-scoped read-only server enforcement | Security verification |
+| OAS-003 | Exact set of contractual party approval types beyond seller and conditional buyer | User-approved; seller instruction distinct; Buyer conditional | Legal mapping |
 | OAS-006 | 24-hour approval validity | Frozen policy rule; server calculates expiry from final required approval | Policy owner |
-| OAS-007 | Authoritative scope version/status source and version semantics | Contract carries scope version and status; source binding needs domain design | Domain owner |
-| OAS-010 | Whether seller release instruction can be withdrawn/replaced and by whom | No withdrawal endpoint; instruction history is retained | Legal + business owner |
-| OAS-011 | Whether suspension clearance submission and clearance verification must be separate HTTP commands | One clearance resource accepts explicit action values; server authorization must distinguish submitter and verifier | Security + domain owner |
-| OAS-012 | Exact terminal semantics for a failed execution versus a failed attempt before commit | Lookup distinguishes FAILED and RECONCILIATION_REQUIRED; transactional boundary must be specified in service design | Engineering + security reviewer |
-| OAS-013 | Whether missing or unauthorized resources return indistinguishable 404 responses | Contract permits 403/404; disclosure policy must be selected consistently | Security owner |
+| OAS-007 | Authoritative scope version/status source and version semantics | User-approved append-only server-owned scope decision register | Domain + Database review |
+| OAS-010 | Whether seller release instruction can be withdrawn/replaced and by whom | User-approved append-only supersession/withdrawal command | Legal review |
+| OAS-011 | Whether suspension clearance submission and clearance verification must be separate HTTP commands | User-approved separate submission and verification operations | Security + domain owner |
+| OAS-012 | Exact terminal semantics for a failed execution versus a failed attempt before commit | User-approved durable terminal FAILED; precommit abort remains attempt-only; uncertain commit reconciled | Engineering + Security + Database |
+| OAS-013 | Whether missing or unauthorized resources return indistinguishable 404 responses | User-approved 404/403 disclosure policy | Security verification |
 
 ## Non-goals and explicit exclusions
 
@@ -49,3 +57,18 @@ The GitHub Actions workflow `.github/workflows/openapi-validation.yml` runs:
 ## Freeze gate
 
 The pinned validator and bundler passed on the exact candidate SHA with no reported OpenAPI structural or reference-resolution findings. The schema is **not frozen**: the decision owners must still approve or resolve the open items above, and independent domain/security reviews remain outstanding. Independent security, database, legal, financial, and Syariah review remains separate.
+
+
+## Outstanding independent review gates
+
+- Security: tenant isolation, role/party/domain authorization, maker-checker, veto permissions, idempotency disclosure and replay rules.
+- Database/Engineering: release-state + authorization-consumption + audit/outbox atomic commit, concurrency, retry and reconciliation.
+- Legal: party approval conditions, seller instruction change rights, jurisdiction and contract mapping.
+- Finance and Syariah: payment, guarantee, evidence and release-gate semantics.
+- Domain/Product: transaction-scope authority, versioning, bilateral activation/reactivation and protective suspension/withdrawal invariants.
+
+No independent reviewer sign-offs are evidenced yet. Automated CI cannot replace these reviews. Also, the current candidate still requires operation-by-operation response coverage verification for applicable 400/401/403/404/409/422/423/429/500/503 responses and typed Problem schemas.
+
+## Freeze gate
+
+**NOT READY TO FREEZE.** Await exact-head CI PASS, complete response/error contract audit, and independent review evidence. Domain Service Design must not start until a separate freeze decision is recorded.
