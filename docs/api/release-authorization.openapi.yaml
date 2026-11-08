@@ -536,14 +536,16 @@ paths:
       summary: Reconcile an execution after timeout or uncertain outcome
       description: |
         The server scopes lookup to authenticated tenant, actor permissions,
-        operation and key. A 404 means no record is visible; it is not permission
-        to retry with a new key. A 202 outcome requires polling this resource.
+        operation and key. Return 200 with NOT_STARTED when no attempt exists
+        for the scoped key; return 404 only for nonexistent or non-disclosable
+        keys/resources. A 202 outcome requires polling this resource. A NOT_STARTED
+        result is not permission to use a different key for the same intent.
       responses:
         '400': { $ref: '#/components/responses/BadRequest' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '500': { $ref: '#/components/responses/InternalError' }
         '200':
-          description: A committed or terminal execution outcome was found.
+          description: Current scoped idempotency state, including NOT_STARTED when no attempt exists.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ExecutionLookup' }
@@ -889,22 +891,25 @@ components:
           description: Client-supplied optimistic precondition only. The server reads authoritative source versions, compares them, and computes the evaluated_versions returned in the approval record; this field is never treated as proof of current state.
         note: { type: string, maxLength: 1000 }
     Approval:
-      allOf:
-        - $ref: '#/components/schemas/ApprovalInput'
-        - type: object
-          required: [approval_id, request_id, actor_id, status, decided_at, evaluated_versions]
-          properties:
-            approval_id: { $ref: '#/components/schemas/Identifier' }
-            request_id: { $ref: '#/components/schemas/Identifier' }
-            actor_id: { $ref: '#/components/schemas/Identifier' }
-            status: { type: string, enum: [ACCEPTED, REJECTED, INVALIDATED, EXPIRED] }
-            decided_at: { $ref: '#/components/schemas/Timestamp' }
-            evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
-            expires_at:
-              allOf: [{ $ref: '#/components/schemas/Timestamp' }]
-              description: Present only for accepted approvals; server-set to 24 hours after the final required approval is recorded, not client-supplied.
-            invalidated_at: { $ref: '#/components/schemas/Timestamp' }
-            invalidation_reason: { type: string }
+      type: object
+      additionalProperties: false
+      required: [approval_id, request_id, approval_type, decision, contract_snapshot_id, actor_id, status, decided_at, evaluated_versions]
+      properties:
+        approval_id: { $ref: '#/components/schemas/Identifier' }
+        request_id: { $ref: '#/components/schemas/Identifier' }
+        approval_type: { $ref: '#/components/schemas/ApprovalType' }
+        decision: { $ref: '#/components/schemas/ApprovalDecision' }
+        contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
+        actor_id: { $ref: '#/components/schemas/Identifier' }
+        status: { type: string, enum: [ACCEPTED, REJECTED, INVALIDATED, EXPIRED] }
+        decided_at: { $ref: '#/components/schemas/Timestamp' }
+        evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+        expires_at:
+          allOf: [{ $ref: '#/components/schemas/Timestamp' }]
+          description: Present only for accepted approvals; server-set to 24 hours after the final required approval is recorded, not client-supplied.
+        invalidated_at: { $ref: '#/components/schemas/Timestamp' }
+        invalidation_reason: { type: string }
+        note: { type: string, maxLength: 1000 }
     ApprovalPage:
       type: object
       required: [items]
