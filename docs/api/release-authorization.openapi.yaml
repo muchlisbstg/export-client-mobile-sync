@@ -11,6 +11,23 @@ info:
     Approval expiry is 24 hours from the final required approval. Material
     changes invalidate affected approvals server-side. Transaction scope
     activation and reactivation require bilateral approval.
+
+    Authorization and disclosure policy: tenant context is resolved from the
+    authenticated principal on the server; callers cannot select or override
+    tenant identity. Roles, party authority, site/transaction assignment,
+    separation of duties, and domain ownership are enforced server-side.
+    Return 404 for nonexistent or cross-tenant/non-disclosable resources;
+    return 403 only when same-tenant existence may be disclosed but the actor
+    lacks permission. This rule applies consistently to resource reads,
+    writes, and idempotency reconciliation. Idempotency records are scoped by
+    tenant, operation, key, and canonical payload hash. Replays return the
+    original result; key reuse with a different payload returns 409.
+
+    Release execution has a durable commit boundary: goods-release state,
+    authorization consumption, and an audit/outbox record commit atomically.
+    External audit delivery may be asynchronous, but the outbox record is in
+    the same transaction. A committed release is never reported before that
+    durable transaction commits.
   contact:
     name: Export Client API Governance
 servers:
@@ -59,6 +76,7 @@ paths:
       tags: [Release Requests]
       operationId: listReleaseAuthorizationRequests
       summary: List release authorization requests
+      description: Read-only, tenant-scoped pagination. Tenant membership and row visibility are derived and enforced server-side; no tenant selector is accepted from the caller.
       parameters:
         - $ref: '#/components/parameters/PageCursor'
         - $ref: '#/components/parameters/PageSize'
@@ -145,7 +163,7 @@ paths:
       tags: [Approvals]
       operationId: recordSellerReleaseInstruction
       summary: Record seller release instruction
-      description: Seller instruction is mandatory under the frozen policy matrix; it is not itself authorization.
+      description: Seller instruction is mandatory under the frozen policy matrix; it is a distinct append-only party instruction, not a party approval and not itself release authorization. Authorized Seller actors may append a superseding or withdrawal decision before execution; prior instructions remain immutable.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/CorrelationId'
@@ -160,11 +178,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SellerInstruction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /release-authorizations/requests/{request_id}/seller-instruction-changes:
+    parameters:
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [Approvals]
+      operationId: appendSellerInstructionChange
+      summary: Supersede or withdraw a seller instruction
+      description: Append-only change command. Only an authorized Seller may submit it before execution. It never edits or deletes prior instructions; it invalidates dependent approvals and active authorization. After execution, use a compensating/audit event outside this pre-execution command.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellerInstructionChangeInput' }
+      responses:
+        '201':
+          description: Append-only instruction change recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SellerInstructionChange' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /release-authorizations/requests/{request_id}/approvals:
     parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -290,14 +341,14 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
-  /release-authorizations/suspensions/{suspension_id}/clearance:
+  /release-authorizations/suspensions/{suspension_id}/clearance-submissions:
     parameters:
       - $ref: '#/components/parameters/SuspensionId'
     post:
       tags: [Suspensions]
       operationId: submitSuspensionClearance
-      summary: Submit suspension clearance for verification
-      description: Clearance must be verified by the authorized owner of the underlying hold; it triggers revalidation, not release.
+      summary: Submit suspension clearance for independent verification
+      description: Submission records evidence and reason only. It cannot verify or clear the hold. The submitter is recorded so the server can enforce maker-checker.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/CorrelationId'
@@ -305,18 +356,49 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SuspensionClearanceInput' }
+            schema: { $ref: '#/components/schemas/SuspensionClearanceSubmissionInput' }
       responses:
-        '200':
-          description: Clearance submission or verification state.
+        '201':
+          description: Clearance submission recorded; hold remains active pending verification.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Suspension' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /release-authorizations/suspensions/{suspension_id}/clearance-verifications:
+    parameters:
+      - $ref: '#/components/parameters/SuspensionId'
+    post:
+      tags: [Suspensions]
+      operationId: verifySuspensionClearance
+      summary: Verify or reject a submitted suspension clearance
+      description: Only the authorized owner/reviewer of the underlying hold may verify or reject. The submitter cannot verify their own submission. Verification clears only the hold; it never grants release and requires fresh revalidation and approvals.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspensionClearanceVerificationInput' }
+      responses:
+        '200':
+          description: Clearance verification decision recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suspension' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /release-authorizations/requests/{request_id}/revalidate:
     parameters:
       - $ref: '#/components/parameters/RequestId'
@@ -498,7 +580,7 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      description: Unique per tenant and operation; server stores canonical payload hash and terminal result.
+      description: Unique per authenticated tenant and operation. Server stores canonical payload hash and attempt/result state; same key and same hash replays the original result, while same key with a different hash returns 409. Reconciliation must not expose cross-tenant key existence.
       schema: { type: string, minLength: 8, maxLength: 128 }
     CorrelationId:
       name: X-Correlation-ID
@@ -527,7 +609,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     Forbidden:
-      description: Actor is authenticated but lacks permission.
+      description: Actor is authenticated but lacks permission when same-tenant resource existence may be disclosed. Use 404 for nonexistent or cross-tenant/non-disclosable resources.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -553,6 +635,19 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     Unavailable:
       description: Required dependency is unavailable; outcome may require reconciliation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    InternalError:
+      description: Unexpected server error; mutation outcome may require reconciliation.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -582,8 +677,8 @@ components:
       enum: [CONTRACT, TRANSACTION_SCOPE, PAYMENT, EVIDENCE, GUARANTEE, LEGAL, SHARIA, QC, CUSTODY, INVENTORY, PARTY_APPROVAL]
     ApprovalType:
       type: string
-      description: Extensible approval category; server policy determines required party approvals.
-      examples: [SELLER_RELEASE, BUYER_RELEASE, CONTRACTUAL_PARTY_RELEASE]
+      description: Party approval category; seller release instruction is a separate mandatory act and is not represented as a party approval. Server policy derives whether buyer or another contractual party approval is required.
+      enum: [BUYER_RELEASE, CONTRACTUAL_PARTY_RELEASE]
     ApprovalDecision:
       type: string
       enum: [APPROVE, REJECT]
@@ -643,8 +738,14 @@ components:
       required: [contract_snapshot_id, scope_version, scope_status, payment_ledger_version, evidence_register_version, policy_version]
       properties:
         contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
-        scope_version: { type: integer, minimum: 1 }
-        scope_status: { type: string, enum: [ACTIVE, SUSPENDED, WITHDRAWN, CLOSED] }
+        scope_version:
+          type: integer
+          minimum: 1
+          description: Version read from the server-owned append-only transaction-scope decision register linked to contract_id and contract_snapshot_id; clients cannot write or choose this value.
+        scope_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, WITHDRAWN, CLOSED]
+          description: Server-derived current state from valid bilateral activation/reactivation or permitted protective suspension/withdrawal events.
         payment_ledger_version: { type: string, minLength: 1 }
         evidence_register_version: { type: string, minLength: 1 }
         guarantee_register_version: { type: string }
@@ -689,30 +790,66 @@ components:
             instruction_id: { $ref: '#/components/schemas/Identifier' }
             actor_id: { $ref: '#/components/schemas/Identifier' }
             recorded_at: { $ref: '#/components/schemas/Timestamp' }
+    SellerInstructionChangeInput:
+      type: object
+      additionalProperties: false
+      required: [instruction_id, action, reason]
+      properties:
+        instruction_id: { $ref: '#/components/schemas/Identifier' }
+        action: { type: string, enum: [SUPERSEDE, WITHDRAW] }
+        replacement_instruction: { type: string, enum: [RELEASE, DO_NOT_RELEASE] }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+      allOf:
+        - if:
+            properties: { action: { const: SUPERSEDE } }
+          then:
+            required: [replacement_instruction]
+        - if:
+            properties: { action: { const: WITHDRAW } }
+          then:
+            not:
+              required: [replacement_instruction]
+    SellerInstructionChange:
+      allOf:
+        - $ref: '#/components/schemas/SellerInstructionChangeInput'
+        - type: object
+          required: [change_id, request_id, actor_id, recorded_at, invalidated_approval_ids]
+          properties:
+            change_id: { $ref: '#/components/schemas/Identifier' }
+            request_id: { $ref: '#/components/schemas/Identifier' }
+            actor_id: { $ref: '#/components/schemas/Identifier' }
+            recorded_at: { $ref: '#/components/schemas/Timestamp' }
+            invalidated_approval_ids:
+              type: array
+              items: { $ref: '#/components/schemas/Identifier' }
+            invalidated_authorization_id: { $ref: '#/components/schemas/Identifier' }
     ApprovalInput:
       type: object
       additionalProperties: false
-      required: [approval_type, decision, contract_snapshot_id, evaluated_versions]
+      required: [approval_type, decision, contract_snapshot_id, expected_versions]
       properties:
         approval_type: { $ref: '#/components/schemas/ApprovalType' }
         decision: { $ref: '#/components/schemas/ApprovalDecision' }
         contract_snapshot_id: { $ref: '#/components/schemas/Identifier' }
-        evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
+        expected_versions:
+          $ref: '#/components/schemas/EvaluatedVersions'
+          description: Client-supplied optimistic precondition only. The server reads authoritative source versions, compares them, and computes the evaluated_versions returned in the approval record; this field is never treated as proof of current state.
         note: { type: string, maxLength: 1000 }
     Approval:
       allOf:
         - $ref: '#/components/schemas/ApprovalInput'
         - type: object
-          required: [approval_id, request_id, actor_id, status, approved_at]
+          required: [approval_id, request_id, actor_id, status, decided_at, evaluated_versions]
           properties:
             approval_id: { $ref: '#/components/schemas/Identifier' }
             request_id: { $ref: '#/components/schemas/Identifier' }
             actor_id: { $ref: '#/components/schemas/Identifier' }
-            status: { type: string, enum: [RECORDED, REJECTED, INVALIDATED, EXPIRED] }
-            approved_at: { $ref: '#/components/schemas/Timestamp' }
+            status: { type: string, enum: [ACCEPTED, REJECTED, INVALIDATED, EXPIRED] }
+            decided_at: { $ref: '#/components/schemas/Timestamp' }
+            evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
             expires_at:
               allOf: [{ $ref: '#/components/schemas/Timestamp' }]
-              description: Server-set to 24 hours after final required approval.
+              description: Present only for accepted approvals; server-set to 24 hours after the final required approval is recorded, not client-supplied.
             invalidated_at: { $ref: '#/components/schemas/Timestamp' }
             invalidation_reason: { type: string }
     ApprovalPage:
@@ -769,16 +906,23 @@ components:
           type: array
           uniqueItems: true
           items: { $ref: '#/components/schemas/Identifier' }
-    SuspensionClearanceInput:
+    SuspensionClearanceSubmissionInput:
       type: object
       additionalProperties: false
-      required: [action, reason]
+      required: [reason, evidence_ids]
       properties:
-        action: { type: string, enum: [SUBMIT_FOR_VERIFICATION, VERIFY_CLEARANCE, REJECT_CLEARANCE] }
         reason: { type: string, minLength: 1, maxLength: 2000 }
         evidence_ids:
           type: array
+          minItems: 1
           items: { $ref: '#/components/schemas/Identifier' }
+    SuspensionClearanceVerificationInput:
+      type: object
+      additionalProperties: false
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [VERIFY, REJECT] }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
     Suspension:
       type: object
       required: [suspension_id, request_id, domain, status, created_at]
@@ -811,9 +955,13 @@ components:
         request_id: { $ref: '#/components/schemas/Identifier' }
         status: { type: string, enum: [ACTIVE, CONSUMED, INVALIDATED, EXPIRED] }
         issued_at: { $ref: '#/components/schemas/Timestamp' }
-        expires_at: { $ref: '#/components/schemas/Timestamp' }
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: Server-calculated short-lived expiry under the active release-authorization policy; never client-supplied.
         evaluated_versions: { $ref: '#/components/schemas/EvaluatedVersions' }
         consumed_at: { $ref: '#/components/schemas/Timestamp' }
+        invalidated_at: { $ref: '#/components/schemas/Timestamp' }
+        invalidation_reason: { type: string, description: Server-recorded reason when any material authoritative source version changes.
     ExecuteReleaseInput:
       type: object
       additionalProperties: false
@@ -828,7 +976,10 @@ components:
         execution_id: { $ref: '#/components/schemas/Identifier' }
         authorization_id: { $ref: '#/components/schemas/Identifier' }
         request_id: { $ref: '#/components/schemas/Identifier' }
-        status: { type: string, enum: [COMMITTED, FAILED] }
+        status:
+          type: string
+          enum: [COMMITTED, FAILED]
+          description: FAILED is permitted only for a durable terminal record proving the goods-release state change did not commit. A pre-commit abort has no ReleaseExecution resource; the idempotency attempt remains reconcilable under the original key.
         completed_at: { $ref: '#/components/schemas/Timestamp' }
         committed_at: { $ref: '#/components/schemas/Timestamp' }
         idempotency_key: { type: string }
@@ -837,14 +988,17 @@ components:
       type: object
       required: [status, idempotency_key, reconciliation_required, retry_allowed]
       properties:
-        status: { type: string, enum: [NOT_STARTED, PROCESSING, COMMITTED, FAILED, RECONCILIATION_REQUIRED] }
+        status:
+          type: string
+          enum: [NOT_STARTED, PROCESSING, COMMITTED, FAILED, RECONCILIATION_REQUIRED]
+          description: NOT_STARTED is a typed lookup result when no attempt exists for this authenticated tenant, operation and key; do not return 404 merely because no attempt exists. A 404 is reserved for a key/resource that is non-disclosable under tenant policy.
         idempotency_key: { type: string }
         execution_id: { $ref: '#/components/schemas/Identifier' }
         authorization_id: { $ref: '#/components/schemas/Identifier' }
         reconciliation_required: { type: boolean }
         retry_allowed:
           type: boolean
-          description: Server-derived; clients must not infer retry safety from transport errors.
+          description: Server-derived. If true, retry only the same operation with the same original key and canonical payload; never generate a new key for an uncertain attempt.
         terminal_problem: { $ref: '#/components/schemas/Problem' }
     AuditEvent:
       type: object
