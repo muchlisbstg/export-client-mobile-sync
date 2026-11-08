@@ -1,6 +1,6 @@
 # P0 API endpoint authorization matrix
 
-**Current integration baseline:** `b9bb1e010b443ec449e698d4e8a8409fd8286d47` (2026-11-08).  
+**Current integration baseline:** `79bf932b85b5e7bc618a42de8feb6565061ef869` (2026-11-08; current main merge baseline).  
 **Historical expanded test matrix:** source/test evidence originally assembled in PR #119; revalidated against the current source file inventory during PR #128 preparation.  
 **Audited baseline:** `5da5ecf950f6269048312d2c9353d8e912a9ff41`  
 **Remediation/test head for this evidence update:** `b572a5e299e6fe8ad4caf88505e7a21025c0a5bc`  
@@ -42,9 +42,18 @@
 | DELETE | `/api/v1/transactions/:id/access-assignments/:userId/:role` | Bearer + active enterprise + enterprise_admin | Only active assignment in current tenant can be revoked; audit write must succeed |
 | POST | `/api/v1/transactions/:id/site-links` | Bearer + active enterprise + enterprise_admin | Transaction and active site must both belong to current tenant; audit write must succeed |
 
-## CORS contract
+## CORS contract and browser evidence
 
-The API's CORS middleware now advertises `GET, POST, PATCH, DELETE, OPTIONS` and the request headers consumed by route logic: `Content-Type`, `Authorization`, `Idempotency-Key`, `X-Request-Id`, and `X-Active-Tenant-Id`. A synthetic preflight test covers DELETE/PATCH and those headers. This validates the response contract; it does not replace browser E2E from each platform.
+The API's CORS middleware advertises `GET, POST, PATCH, DELETE, OPTIONS` and the request headers consumed by route logic: `Content-Type`, `Authorization`, `Idempotency-Key`, `X-Request-Id`, and `X-Active-Tenant-Id`. The synthetic suite `test/p0-cors-preflight.test.mjs` covers the server-side preflight contract, including DELETE/PATCH and allowed/unsupported request attributes.
+
+**Real-browser evidence added by PR #128:**
+- Test: `test/p0-browser-cors.e2e.mjs`; runner: Chromium via Playwright.
+- Exact tested candidate SHA: `824e37cd1047158e00a7b17c9aa6762462a39c72`.
+- Workflow: [P0 Browser Security E2E run 42439061375](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42439061375) — completed successfully.
+- Allowed-origin case: a browser fetch sends non-safelisted `X-Request-Id`, causing browser-managed preflight; actual `GET /health` returns HTTP 200 with minimal `{ "status": "ok" }` body and exact allowed-origin response header.
+- Hostile-origin case: browser fetch is rejected and surfaces a `TypeError`.
+
+**Coverage boundary:** this test exercises a public health endpoint, not an authenticated business route. It does not establish complete authenticated Web login/session flows, all protected endpoints, every method/header combination in a real browser, credentialed-cookie behavior, or Android/iOS browser behavior. CORS is not authorization. The PR #128 result is evidence for its exact candidate SHA, not a fresh run on current main `79bf932b85b5e7bc618a42de8feb6565061ef869` or future commits.
 
 ## Mandatory test dimensions
 
@@ -55,13 +64,14 @@ The API's CORS middleware now advertises `GET, POST, PATCH, DELETE, OPTIONS` and
 5. **Transaction boundary:** buyer-side and seller-side membership, operational assignment, role mismatch, missing site link, revoked assignment, and cross-transaction IDs.
 6. **Audit fail-closed:** successful and denied mutations/reads must not return success when required audit persistence fails.
 7. **Public contract:** public routes remain public but rate-limited/validated; health response remains minimal; retired route remains 410.
-8. **CORS:** preflight for all methods/headers actually used by web clients and route consumers.
+8. **CORS:** retain synthetic preflight coverage for the declared methods/headers; extend browser tests to authenticated application requests and any additional method/header combinations actually used by Web clients.
 
 ## Current evidence and open gaps
 
 - The endpoint auth test covers 24 protected route entries for missing, invalid, and expired bearer credentials, plus public/retired contracts.
 - Existing synthetic suites cover admin metadata spoofing, enterprise membership/role denial, a subset of site/transaction scope, assignment revocation, two-sided transfer authorization, and denied-write immutability for selected supply-chain operations.
-- The follow-up added explicit CORS preflight assertions and aligned the app's health display with the minimal public liveness contract. Operational peer topology and queue metrics remain intentionally absent from public health.
+- PR #128 added real Chromium browser CORS coverage and aligned the app's health display with the minimal public liveness contract. Operational peer topology and queue metrics remain intentionally absent from public health.
+- Browser workflow run `42439061375` passed on candidate SHA `824e37cd1047158e00a7b17c9aa6762462a39c72`; the test verifies browser-managed preflight followed by actual public `GET /health`, plus hostile-origin rejection. It is bounded evidence, not authenticated route coverage or a current-main rerun.
 - **Not yet proven:** every endpoint × role × enterprise × site combination; all denied-write paths; audit-storage failure for every mutation; full role-revocation lifecycle across every resource.
 - CI passing is necessary evidence, not independent Security approval. P0 remains **OPEN** pending exact-SHA verification and independent Security Review.
 
@@ -154,7 +164,7 @@ The matrix now has broad negative-role and representative site-boundary integrat
 3. Add systematic foreign-tenant, inactive-site, unassigned-site, and revoked-assignment cases to each individual site-bound route, not only representative route families.
 4. Inject audit-table write failures for each mutation and verify transaction rollback/fail-closed behavior. Current tests prove selected audit and denied-write behavior, not every mutation's failure path.
 5. Verify role revocation (enterprise role assignment) independently from site-assignment revocation for each affected route.
-6. Verify CORS browser preflight and actual requests from Web, not only synthetic OPTIONS responses.
+6. Extend browser CORS E2E beyond the currently passing public `/health` scenario to authenticated Web session/business-route requests and any additional client-used methods/headers; verify on the exact candidate SHA.
 7. Obtain independent Security Review against the exact SHA. CI success is supporting evidence only and does not close P0.
 
 No real customer data, staging database, migration, deployment, or paid infrastructure was used. No PR merge or release approval is implied by this evidence pack.
@@ -204,7 +214,18 @@ The independent reviewer should inspect the source and test diffs at the exact r
 - Audit-table write-failure injection is not yet exhaustive for every mutation.
 - Enterprise-role revocation is not yet independently tested against every route family.
 - Site revocation/inactivation and cross-site tests are representative, not a complete per-route Cartesian matrix.
-- Browser-level CORS E2E is still outstanding.
-- PR #119 was observed as Draft and GitHub reported `mergeable_state=dirty`; its base/head divergence must be reconciled before review can be completed on a clean PR diff.
+- Browser-level CORS E2E is **partially complete**: PR #128's Chromium test passed on its exact head SHA for allowed-origin preflight + actual public `/health` request and hostile-origin rejection. Authenticated Web session/business-route coverage and broader method/header coverage remain open.
+- Historical note: PR #119 was previously observed as Draft with a dirty merge state. It is now **closed and not merged**; its nine changed paths are represented in the inspected main baseline. Do not treat its stale branch divergence as an active merge task or cherry-pick source.
 
 **Disposition: P0 SECURITY OPEN.** Do not merge, deploy, migrate, or approve release on the basis of this CI run.
+
+
+## Browser CORS E2E evidence update — 2026-11-08
+
+PR #128 merged the real Chromium browser test and workflow. The exact candidate test SHA was `824e37cd1047158e00a7b17c9aa6762462a39c72`; GitHub Actions run `42439061375` (`P0 Browser Security E2E`) completed with conclusion `success`.
+
+The test's positive path starts a local allowed web origin and API, performs browser `fetch(GET /health)` with non-safelisted `X-Request-Id`, and checks HTTP 200, the minimal health JSON, and exact `Access-Control-Allow-Origin`. Successful completion demonstrates that Chromium accepted the browser-managed preflight and the actual GET. The negative path starts a distinct hostile origin and expects the browser fetch to reject with `TypeError`.
+
+This is not evidence of an authenticated API call, a real application login/session, all protected route families, every CORS method/header permutation, credentialed cross-origin cookies, or Android/iOS app E2E. Do not mark those dimensions complete from this run.
+
+**Current main reference:** `79bf932b85b5e7bc618a42de8feb6565061ef869`. The browser E2E result is historical evidence on the exact PR #128 candidate SHA, not an assertion that the workflow has rerun on this current main SHA.
