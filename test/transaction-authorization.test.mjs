@@ -51,6 +51,23 @@ test("SEC-03 transaction reads require explicit assignment, role and site scope;
     const auditor=await (await request("auditor")).json();
     assert.deepEqual(Object.keys(auditor.data).sort(),["createdAt","id","status"]);
     assert.equal((await request("admin")).status,200);
+
+    const mutate=(who,url,method,body)=>fetch(base+url,{method,headers:{Authorization:"Bearer token-"+who,"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const nonAdminGrant=await mutate("buyer","/api/v1/transactions/tx-1/access-assignments","POST",{userId:"user-supplier",role:"supplier",siteId:"site-supplier"});
+    assert.equal(nonAdminGrant.status,403,"non-admin roles cannot grant transaction access");
+    const grantResponse=await mutate("admin","/api/v1/transactions/tx-1/access-assignments","POST",{userId:"user-supplier",role:"supplier",siteId:"site-supplier"});
+    assert.equal(grantResponse.status,201,"admin may grant a role only when user, role, transaction and linked site agree");
+    const siteLink=await mutate("admin","/api/v1/transactions/tx-1/site-links","POST",{siteId:"site-warehouse",purpose:"audit"});
+    assert.equal(siteLink.status,201,"admin may link an active site owned by the enterprise");
+    const crossTransactionGrant=await mutate("admin","/api/v1/transactions/tx-other/access-assignments","POST",{userId:"user-supplier",role:"supplier",siteId:"site-supplier"});
+    assert.equal(crossTransactionGrant.status,404,"admin cannot assign access to a transaction outside the active enterprise");
+    db.prepare("INSERT INTO supply_sites(id,tenant_id,site_code,name,site_type,active,created_at) VALUES('site-foreign','buyer-side','FOREIGN','Foreign Site','supplier',1,?)").run(now);
+    const crossTenantSiteLink=await mutate("admin","/api/v1/transactions/tx-1/site-links","POST",{siteId:"site-foreign",purpose:"supplier_fulfilment"});
+    assert.equal(crossTenantSiteLink.status,404,"admin cannot link a site outside the active enterprise");
+    const revoke=await mutate("admin","/api/v1/transactions/tx-1/access-assignments/user-supplier/supplier","DELETE",{});
+    assert.equal(revoke.status,200,"admin may revoke the exact active transaction assignment");
+    assert.equal((await request("supplier")).status,404,"transaction access is revoked immediately");
+
     assert.equal((await request("buyer","/api/v1/transactions/tx-other")).status,404,"cross-enterprise object IDs must not disclose transaction existence");
     db.prepare("UPDATE supply_site_assignments SET status='revoked' WHERE tenant_id='enterprise-1' AND user_id='user-logistics'").run();
     assert.equal((await request("logistics")).status,404,"revoked site assignment must revoke transaction access immediately");
