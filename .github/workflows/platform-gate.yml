@@ -40,7 +40,7 @@ jobs:
           npm ci
       - name: Expo Web export
         run: npm run export:web
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-export-${{ env.CANDIDATE_SHA }}
           path: |
@@ -84,7 +84,7 @@ jobs:
             echo "lockfile_sha256=$(sha256sum package-lock.json | awk '{print $1}')"
             echo "java_version=$(java -version 2>&1 | head -n1)"
           } > android-build-manifest.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-debug-apk-${{ env.CANDIDATE_SHA }}
           path: |
@@ -154,7 +154,7 @@ jobs:
             echo "swift_version=$swift_version"
             echo "xcode_version=$(xcodebuild -version | tr '\n' ' ')"
           } > ios-build-manifest.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ios-simulator-app-${{ env.CANDIDATE_SHA }}
           path: |
@@ -214,7 +214,7 @@ jobs:
             echo "full_audit_exit=$(cat npm-audit-full.exit-code)"
             echo "production_audit_exit=$(cat npm-audit-production.exit-code)"
           } > dependency-audit-manifest.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dependency-audit-${{ env.CANDIDATE_SHA }}
           path: |
