@@ -31,7 +31,7 @@ const auth = createSupabaseAuth({
   fetcher: async (url, init) => {
     assert.equal(url, "https://auth.example.test/auth/v1/user");
     assert.equal(init.headers.apikey, "test-public-key");
-    const match = /^Bearer\\s+([^\\s]+)$/i.exec(init.headers.Authorization ?? "");
+    const match = /^Bearer\s+([^\s]+)$/i.exec(init.headers.Authorization ?? "");
     const userId = match ? identities.get(match[1]) : null;
     if (!userId) return new Response("{}", { status: 401 });
     // Test-only IdP response. Deliberately include user-editable role metadata:
