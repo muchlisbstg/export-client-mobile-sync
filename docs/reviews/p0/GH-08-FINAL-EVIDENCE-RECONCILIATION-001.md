@@ -20,6 +20,23 @@
 
 All disposable database workflows completed successfully. PostgreSQL 16.10 was used; GH-06 parity also used SQLite 3.53.4. Artifacts contain synthetic test evidence only.
 
+## 1A. CI job-log review
+
+Full decoded job logs were retrieved and inspected for all three evidence workflows:
+
+| Workflow | Job log lines | Review result |
+|---|---:|---|
+| GH-05 combined disposable RLS/parity | 536 | Expected constraint, trigger, permission and RLS rejections align with negative assertions; no unexpected failing step |
+| GH-06 disposable parity | 484 | Expected FK, unique, check, trigger and temporal-overlap rejections align with parity assertions; no unexpected failing step |
+| GH-09 / POOL-01 / SEC-02 | 444 | Deliberate division-by-zero rollback, statement timeout and privilege-map denial align with fault-injection assertions; no unexpected failing step |
+
+Non-blocking CI/runtime warnings observed:
+- GitHub warns that `actions/checkout@v4`, `actions/setup-node@v4` and `actions/upload-artifact@v4` target Node.js 20 and are currently forced onto Node.js 24.
+- Node dependency deprecation warning for `punycode`.
+- Disposable PostgreSQL container initializes local connections with `trust` authentication. This is a container bootstrap detail, not evidence of production authentication posture.
+- PostgreSQL error log entries are intentional negative-test evidence (constraint/RLS/permission denials, rollback and timeout), not failed assertions. All three workflow conclusions are SUCCESS and the uploaded machine-readable artifacts report zero failed cases.
+
+
 ## 2. Findings and remediations
 
 ### SEC-GH05-04 — Membership self-enrollment
