@@ -15,6 +15,7 @@
 5. [Domain decision acceptance matrix](./DOMAIN-DECISION-ACCEPTANCE-MATRIX-001.md) — positive/negative acceptance criteria and DEC-006–008 evidence gates; not executed.
 6. [Canonical entity, key and constraint mapping](./CANONICAL-ENTITY-KEY-CONSTRAINT-MAPPING-001.md) — complete logical mapping for review; not frozen.
 7. [Integrity gap resolution](./INTEGRITY-GAP-RESOLUTION-001.md) — four resolved design choices, caveats and engine parity.
+8. [DEC-006–008 evidence review](./DEC-006-008-EVIDENCE-REVIEW-001.md) — source-pinned read-only assessment of RLS, SQLite provenance and cross-engine parity.
 
 ## Four integrity gaps
 
@@ -23,14 +24,20 @@
 - G-03: assignment references stable tenant membership ID + tenant through a composite FK.
 - G-04: assignment references exact site-link ID and complete tenant/transaction/participant/site tuple through a composite FK.
 
+## Current DEC-006–008 result
+
+- DEC-006 RLS: OPEN — no PostgreSQL RLS policy/role/test evidence in reviewed source.
+- DEC-007 SQLite provenance: PARTIALLY EVIDENCED — API source enables foreign_keys, but actual deployed process/path/version and all connections are unverified.
+- DEC-008 PG–SQLite parity: OPEN — no paired engine test evidence.
+
 ## Review sequence
 
-1. Review/accept the four gap resolutions.
-2. Review full candidate-key and composite-FK map.
+1. Review/accept the four integrity-gap resolutions.
+2. Review complete candidate-key and composite-FK map.
 3. Review PostgreSQL/SQLite trigger, partial-index, temporal and connection requirements.
-4. Close DEC-006 RLS design.
-5. Evidence DEC-007 SQLite runtime provenance.
-6. Execute DEC-008 parity corpus only on disposable databases and pinned versions.
+4. Design and test DEC-006 RLS.
+5. Obtain owner-authorized read-only evidence for DEC-007.
+6. Run DEC-008 parity corpus only on disposable databases and pinned versions.
 7. Reconcile legacy data, backend authorization and cross-platform contracts.
 8. Only then assess schema-freeze readiness.
 
@@ -41,7 +48,8 @@ The decision register and Supplier reconciliation are copied from the Web review
 - Decision register source SHA: `8e5349513275550ab5079b82b2eba9aeda6c332b`
 - Supplier hybrid reconciliation source SHA: `179526cdf869c4e86e80f660a2efaf1a6df78d50`
 - Canonical PostgreSQL–SQLite source SHA: `c1395b01ce6b5c80abfe5661a1e64e893a2d87d2`
+- Evidence review baseline: Mobile `main` SHA `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1`
 
 ## Governance boundary
 
-Documentation-only review branch. No source-code changes, DDL, migration, database execution, shared/live tests, PR, merge, deployment or staging/production mutation is authorized. DEC-006–008 remain open and implementation readiness remains **NOT READY**.
+Documentation-only review branch. No source-code changes, DDL, migration, database execution, shared/live tests, PR, merge, deployment or staging/production mutation is authorized. Schema freeze and implementation readiness remain **NOT READY**.

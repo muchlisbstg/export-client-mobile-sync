@@ -14,9 +14,9 @@ This matrix defines expected positive and negative behavior. It is not a test re
 | Gap | Canonical resolution | Design status |
 |---|---|---|
 | Binding version | Participant stores NOT NULL `tenant_legal_party_binding_id`; composite FK pins `(binding_id,tenant_id,legal_party_id)` | RESOLVED IN SPEC — REVIEW |
-| Buyer/Seller role uniqueness | Separate partial unique indexes on transaction_id for buyer and seller roles | RESOLVED IN SPEC — REVIEW |
+| Buyer/Seller role uniqueness | Separate partial unique indexes on `transaction_id` for buyer and seller roles | RESOLVED IN SPEC — REVIEW |
 | Membership consistency | Assignment stores `membership_id,tenant_id`; composite FK to stable membership `(id,tenant_id)`; user derived from membership | RESOLVED IN SPEC — REVIEW |
-| Assignment/site-link consistency | Assignment stores site_link_id and composite FK pins exact site-link/tenant/transaction/participant/site tuple | RESOLVED IN SPEC — REVIEW |
+| Assignment/site-link consistency | Assignment references exact site-link row via composite FK over ID + tenant + transaction + participant + site | RESOLVED IN SPEC — REVIEW |
 
 ## 3. Key and constraint acceptance
 
@@ -85,70 +85,66 @@ SQLite parity requires `PRAGMA foreign_keys=ON` on every connection, a pinned mi
 | AUTH-014 | Stale offline command after server revocation | Server rejects replay |
 | AUTH-015 | All exact predicates active | ALLOW within exact scope only |
 
-## 6. DEC-006–008 review gates
+## 6. DEC-006–008 evidence review
 
-| DEC | Closure evidence required | Current status |
+| DEC | Evidence finding on reviewed Mobile main SHA | Status |
 |---|---|---|
-| DEC-006 RLS | Tenant/participant/action policy matrix; app role is not owner/superuser/BYPASSRLS; FORCE ROW LEVEL SECURITY where applicable; transaction-local tenant context; read/write policy tests; cross-tenant negative tests; pool-context reset tests | OPEN |
-| DEC-007 SQLite provenance | Actual runtime library/version; database path; schema version/hash; `PRAGMA foreign_keys` per connection; inventory of tables/indexes/FKs/checks/triggers; migration source and startup path; tests covering reopen/worker connections | NOT VERIFIED |
-| DEC-008 PG–SQLite parity | Disposable DBs on pinned engine versions; same fixtures and positive/negative corpus; compare constraint outcomes, NULL semantics, time precision, partial indexes, triggers, rollback and concurrency; source SHA + schema version evidence | NOT VERIFIED |
+| DEC-006 RLS | No PostgreSQL RLS policies, app-role/BYPASSRLS evidence or PostgreSQL RLS tests found; current authorization is SQLite-backed application middleware | OPEN — NOT EVIDENCED |
+| DEC-007 SQLite provenance | API source opens better-sqlite3 and sets foreign_keys ON; deployed process/path/version and every connection path not verified | PARTIALLY EVIDENCED — NOT CLOSED |
+| DEC-008 parity | Reviewed tests use in-memory/temp SQLite; no paired PostgreSQL test run or parity report found | OPEN — NO PARITY EVIDENCE |
 
-### DEC-006 detailed review checklist
+Detailed evidence and closure requirements: [DEC-006–008 Evidence Review](./DEC-006-008-EVIDENCE-REVIEW-001.md).
 
-- [ ] Define tenant context source from authenticated server-side membership; reject client tenant override.
-- [ ] Define RLS policies for every tenant-owned table and relationship table.
-- [ ] Define participant/site/action-scoped predicates; avoid broad transaction access by NULL.
-- [ ] Use non-owner application role without BYPASSRLS; evaluate FORCE ROW LEVEL SECURITY.
-- [ ] Ensure connection-pool tenant context is transaction-local and cleared on commit/rollback.
-- [ ] Test cross-tenant SELECT/INSERT/UPDATE/DELETE, including indirect joins and nested relations.
-- [ ] Test owner, migration, worker, background-job and service roles separately.
-- [ ] Ensure backend authorization remains active; RLS is defense-in-depth.
+## 7. DEC closure requirements
 
-### DEC-007 detailed review checklist
+### DEC-006 — PostgreSQL RLS
+- [ ] Inventory all tenant-owned and relationship tables.
+- [ ] Define tenant/participant/site/action RLS predicates from authenticated server-side context.
+- [ ] Define app, migration, owner and worker roles; prove app role is not owner/superuser/BYPASSRLS.
+- [ ] Decide FORCE ROW LEVEL SECURITY and transaction-local context/pool reset.
+- [ ] Execute SELECT/INSERT/UPDATE/DELETE and indirect-join negative tests on disposable PostgreSQL.
+- [ ] Record policy definitions, role attributes, test logs and exact source/schema SHA.
 
-- [ ] Identify SQLite library actually loaded by each app/runtime, not just CLI version.
-- [ ] Capture database file path and schema version/hash.
-- [ ] Verify `PRAGMA foreign_keys` returns 1 on every connection.
-- [ ] Inventory `foreign_key_list`, `index_list`, table SQL, CHECKs and triggers.
-- [ ] Verify partial unique indexes exist and reject duplicate Buyer/Seller roles.
-- [ ] Verify app startup, background workers and reopen paths all enable FKs.
-- [ ] Record evidence against exact commit and runtime build.
+### DEC-007 — SQLite provenance
+- [ ] Identify actual deployed process/service and exact build.
+- [ ] Establish effective DB path and embedded SQLite library version from that process.
+- [ ] Inventory every connection constructor and verify foreign_keys=1 per connection.
+- [ ] Capture schema-only tables/columns/PKs/unique/partial indexes/FKs/CHECKs/triggers/migration version.
+- [ ] Capture integrity_check, foreign_key_check and schema fingerprint.
+- [ ] Reconcile physical inventory with canonical mapping without exporting DB/WAL/SHM or operational rows.
 
-### DEC-008 detailed review checklist
+### DEC-008 — PostgreSQL/SQLite parity
+- [ ] Pin both engine versions.
+- [ ] Run identical positive/negative fixtures on disposable DBs.
+- [ ] Include composite FKs, partial unique indexes, temporal overlap/concurrency, trigger behavior and rollback.
+- [ ] Include timestamp precision, UTC half-open intervals, NULL and UUID representation.
+- [ ] Compare outcomes and publish schema hashes, logs, exact commit and reviewer sign-off.
 
-- [ ] Pin PostgreSQL and SQLite versions.
-- [ ] Run same fixture corpus against disposable databases only.
-- [ ] Compare positive/negative outcomes and SQL error classes.
-- [ ] Include concurrent overlapping binding writes and transaction rollback.
-- [ ] Include partial unique index, composite FK and trigger parity.
-- [ ] Include NULL, timestamp precision and half-open boundary cases.
-- [ ] Publish schema hashes, test logs and exact source commit references.
-
-## 7. Evidence and implementation readiness
+## 8. Evidence and implementation readiness
 
 | Gate | Current status |
 |---|---|
 | Domain DEC-001–005 | APPROVED |
 | Four integrity gap resolutions | RESOLVED IN SPEC — REVIEW PENDING |
 | Logical entity/key mapping | COMPLETE FOR REVIEW |
-| DEC-006 RLS | OPEN |
-| DEC-007 SQLite provenance | NOT VERIFIED |
-| DEC-008 parity | NOT VERIFIED |
+| DEC-006 RLS | OPEN — NOT EVIDENCED |
+| DEC-007 SQLite provenance | PARTIALLY EVIDENCED — NOT CLOSED |
+| DEC-008 parity | OPEN — NO PARITY EVIDENCE |
 | Backend authorization and legacy reconciliation | NOT VERIFIED / OPEN |
 | Schema freeze | NOT READY |
 | Implementation readiness | NOT READY |
 
-## 8. Review sign-off checklist
+## 9. Review sign-off checklist
 
 - [ ] Accept binding-version FK and immutable historical reference.
 - [ ] Accept partial unique indexes for Buyer and Seller.
 - [ ] Accept membership_id assignment reference and stable membership identity.
 - [ ] Accept exact site-link composite FK.
-- [ ] Accept cross-row trigger/normalized-relation enforcement for role-party matching.
+- [ ] Accept trigger/normalized-relation strategy for role-party matching.
 - [ ] Confirm engine versions and timestamp/UUID representation.
 - [ ] Close DEC-006, DEC-007 and DEC-008 with source-pinned evidence.
 - [ ] Only then assess schema-freeze readiness.
 
-## 9. Governance
+## 10. Governance
 
 This is a test specification, not a test report. No tests were run by creating this document. No DDL, migration, source implementation, shared/live test, PR, merge or deployment is authorized.
