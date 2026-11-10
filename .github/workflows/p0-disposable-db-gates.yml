@@ -80,6 +80,7 @@ jobs:
           if [ "${{ steps.fixture.outputs.exit_code }}" = "0" ]; then
             node tests/p0-db-gates/parity-test.mjs > artifacts/parity.json 2>&1
             parity_exit=$?
+            node tests/p0-db-gates/rls-test.mjs > artifacts/rls.json 2>&1
             rls_exit=$?
           else
             printf '{"suite":"parity","status":"NOT_RUN","reason":"fixture initialization failed"}\n' > artifacts/parity.json
