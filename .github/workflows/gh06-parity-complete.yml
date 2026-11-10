@@ -1,0 +1,85 @@
+name: GH-06 Disposable PostgreSQL and SQLite Parity Completion
+
+on:
+  push:
+    branches:
+      - review/p0-domain-schema-readonly-2026-11-10
+    paths:
+      - "tests/p0-db-gates/parity-test.mjs"
+      - "tests/p0-db-gates/temporal-concurrency-test.mjs"
+      - ".github/workflows/gh06-parity-complete.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gh06-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disposable-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16.10
+        env:
+          POSTGRES_DB: gates
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gates"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PG_ADMIN_URL: postgres://postgres:postgres@localhost:5432/gates
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare evidence directory
+        run: mkdir -p artifacts && printf 'candidate_sha=%s\\n' "$GITHUB_SHA" > artifacts/run-context.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked repository dependencies
+        run: npm ci
+      - name: Install disposable PostgreSQL client dependency without lockfile mutation
+        run: npm install --no-save --package-lock=false pg@8.16.3
+      - name: Run parity acceptance corpus
+        id: parity
+        shell: bash
+        run: |
+          set +e
+          node tests/p0-db-gates/parity-test.mjs > artifacts/parity.json 2>&1
+          parity_exit=$?
+          node tests/p0-db-gates/temporal-concurrency-test.mjs > artifacts/temporal-concurrency.json 2>&1
+          temporal_exit=$?
+          set -e
+          echo "parity_exit=$parity_exit" >> "$GITHUB_OUTPUT"
+          echo "temporal_exit=$temporal_exit" >> "$GITHUB_OUTPUT"
+          {
+            echo "candidate_sha=$GITHUB_SHA"
+            echo "postgres_image=postgres:16.10"
+            echo "node_version=$(node --version)"
+            echo "parity_script_sha256=$(sha256sum tests/p0-db-gates/parity-test.mjs | cut -d' ' -f1)"
+            echo "temporal_script_sha256=$(sha256sum tests/p0-db-gates/temporal-concurrency-test.mjs | cut -d' ' -f1)"
+          } > artifacts/evidence-manifest.txt
+      - name: Upload parity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gh06-parity-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce fail-closed parity result
+        if: always()
+        run: test "${{ steps.parity.outputs.parity_exit }}" = "0" && test "${{ steps.parity.outputs.temporal_exit }}" = "0"
