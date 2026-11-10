@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import express from "express";
 import pg from "pg";
+import { createSupabaseAuth } from "../../server/auth.mjs";
 
 const { Pool } = pg;
 const adminPool = new Pool({ connectionString: process.env.PG_ADMIN_URL, max: 1 });
@@ -23,14 +24,31 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "4kb" }));
 
+const auth = createSupabaseAuth({
+  url: "https://auth.example.test",
+  anonKey: "test-public-key",
+  adminUserIds: [],
+  fetcher: async (url, init) => {
+    assert.equal(url, "https://auth.example.test/auth/v1/user");
+    assert.equal(init.headers.apikey, "test-public-key");
+    const match = /^Bearer\\s+([^\\s]+)$/i.exec(init.headers.Authorization ?? "");
+    const userId = match ? identities.get(match[1]) : null;
+    if (!userId) return new Response("{}", { status: 401 });
+    // Test-only IdP response. Deliberately include user-editable role metadata:
+    // production middleware must derive authorization from its server allowlist,
+    // never from user_metadata.
+    return new Response(JSON.stringify({
+      id: userId,
+      user_metadata: { role: "admin", enterprise_role: "enterprise_admin" },
+    }), { status: 200 });
+  },
+});
+
 function authenticate(req, res, next) {
-  const match = /^Bearer\s+([^\s]+)$/i.exec(req.get("authorization") ?? "");
-  const userId = match ? identities.get(match[1]) : null;
-  if (!userId) return res.status(401).json({ error: "authentication_required" });
-  // The identity map is a fixed test-only stand-in for a verified issuer response.
-  // No request header, query parameter, or body property is consulted here.
-  req.authIdentity = Object.freeze({ id: userId });
-  return next();
+  return auth.authenticate(req, res, () => {
+    req.authIdentity = res.locals.authIdentity;
+    return next();
+  });
 }
 
 async function resolveMembership(req) {
@@ -114,10 +132,7 @@ app.post("/api/v1/test/assignment-action", authenticate, (req, res) =>
   }),
 );
 
-app.get("/api/v1/test/admin", authenticate, (req, res) => {
-  if (req.authIdentity.id !== "server-admin-test-only") return res.status(403).json({ error: "admin_required" });
-  return res.json({ ok: true });
-});
+app.get("/api/v1/test/admin", authenticate, auth.requireAdmin, (_req, res) => res.json({ ok: true }));
 
 // Test-only probe. max:1 ensures this reuses the same app_api backend connection.
 app.get("/__test/pool-context", async (_req, res) => {
