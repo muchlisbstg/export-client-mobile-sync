@@ -1,47 +1,54 @@
-# GH-06-DISPOSABLE-POSTGRESQL-SQLITE-PARITY-HARNESS-001
+# GH-06 — PostgreSQL / SQLite Parity Evidence Review
 
-**Status:** 19 SYNTHETIC PARITY CASES IMPLEMENTED — FULL CANONICAL DEC-008 REMAINS OPEN
-**Date:** 2026-11-10
-**File:** `tests/p0-db-gates/parity-test.mjs`
+**Status:** SYNTHETIC PARITY CORPUS PASS — CANONICAL DEC-008 ACCEPTANCE STILL OPEN  
+**Date:** 2026-11-10  
+**Branch:** `review/p0-domain-schema-readonly-2026-11-10`
 
-## 1. Execution model
+## Evidence
 
-The runner uses one ephemeral PostgreSQL connection and an in-memory SQLite database. Both receive equivalent DDL and deterministic synthetic fixtures. SQLite foreign-key enforcement is enabled explicitly. PostgreSQL uses temporary tables so the harness does not create persistent application tables. No staging/production connection string is accepted by the workflow.
+- Workflow: [GH-06 run 42778235005](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42778235005)
+- Tested SHA: `da4534b0b30cfcbc66a64c879e028e519b95d996`
+- PostgreSQL: 16.10; SQLite: 3.53.4
+- Result: **15 relational/authorization cases + 4 temporal cases = 19 PASS, 0 FAIL**
+- Artifact ID: `13744827342`
+- Artifact SHA-256: `5c8b41af1742f104be7f917280942135ed122734d4f7b92002c22249301db8d6`
+- Relational fixture fingerprint: `c2d24416f24a05191c542d167f7c4cd4c7f280a26bb94d9b01a9d200e4b81166`
+- Temporal fixture fingerprint: `1ae6195975a8818ce3a886e3b3f75e55c91ef786eb7f951bf421845dc01c2aac`
 
-## 2. Executable cases
+## Executed scenarios
 
-- PAR-001 duplicate tenant/transaction participant key.
-- PAR-002 binding tenant/legal-party composite FK.
-- PAR-003 cross-tenant membership assignment.
-- PAR-004 exact site-link tuple mismatch.
-- PAR-005 duplicate Buyer role across independent tenants.
-- PAR-006 invalid effective interval.
-- PAR-007 Buyer/Seller legal-party distinction.
-- PAR-008 multiple independent Supplier tenants allowed.
-- PAR-009 audit history immutability.
-- PAR-010 multi-step transaction rollback atomicity.
-- PAR-011 Buyer/Seller participant legal-party match.
-- PAR-012 one tenant cannot occupy both Buyer and Seller participant rows for a transaction.
-- PAR-013 revoked membership denies assignment authorization.
-- PAR-014 revoked site link denies assignment authorization.
-- PAR-015 revoked membership blocks offline command replay.
-- PAR-016 overlapping temporal writes serialize; exactly one transaction commits.
-- PAR-017 adjacent half-open effective periods are accepted.
-- PAR-018 NULL end time represents an open-ended effective period.
-- PAR-019 UTC microsecond timestamp precision is preserved.
+The relational runner reports 15 matched PostgreSQL/SQLite outcomes covering participant uniqueness, binding composite FK, membership/site-link assignment constraints, Buyer role uniqueness, valid intervals, Buyer/Seller party distinction, Supplier coexistence, audit immutability, rollback, participant-party match, same-tenant Buyer/Seller rejection, revoked membership, revoked site link, and revoked offline replay.
 
-Each case compares normalized accepted/rejected outcomes rather than raw engine error messages.
+The temporal runner reports four additional passes:
 
-## 3. Scope limitations
+- PAR-010: two PostgreSQL sessions and two SQLite connections contend on overlapping effective periods; exactly one overlapping write commits.
+- PAR-017: adjacent half-open periods are accepted.
+- PAR-018: NULL `effective_to` is treated as open-ended.
+- PAR-019: UTC microsecond precision is preserved.
 
-The current harness executes 15 synthetic relational/authorization scenarios plus four synthetic temporal/concurrency scenarios (PAR-001–019). The temporal runner uses two PostgreSQL sessions with a tenant-row serialization lock and two SQLite connections with writer serialization. The verified temporal cases include overlap rejection under concurrent writes, adjacent half-open periods, open-ended NULL periods, and UTC microsecond precision.
+The parity runner's transaction rollback case is PAR-016. These IDs are now aligned so the temporal concurrency case is PAR-010 and rollback is PAR-016.
 
-This is still **not full DEC-008 acceptance**. Both runners use a deliberately reduced synthetic schema, not the complete canonical production DDL or all three platform implementations. PAR-013–015 exercise equivalent authorization predicates in synthetic fixtures, not the actual authoritative API or offline replay pipeline. Approval evidence, complete lifecycle transitions, production schema fingerprints, and route-by-route cross-platform parity remain open. PostgreSQL RLS is separately tested by GH-05 and cannot be claimed equivalent in SQLite.
+## Acceptance-matrix reconciliation — outstanding gaps
 
-The successful temporal run at code SHA `3511bfa0c8e45dfe70be85b01d6df1ea7b4f383d` reported PAR-016–019: 4 PASS, 0 FAIL. The later parity correction removes a fixture-only nonexistent assignment status predicate; the latest rerun is tracked separately.
+The 19 passing cases are **not** a full pass of the canonical matrix. The current synthetic runner's scenario names and identifiers do not map one-to-one to every KEY/PAR/AUTH row in `DOMAIN-DECISION-ACCEPTANCE-MATRIX-001.md`.
 
-The runner must be executed only with a disposable PostgreSQL service. It uses synthetic identifiers and never loads production records.
+Still requiring explicit, source-pinned acceptance tests include:
 
-## 4. Closure criteria
+- KEY-001 duplicate participant primary key.
+- KEY-003 exact participant composite tuple.
+- KEY-004 supply-site tenant/id uniqueness and cross-tenant reference.
+- KEY-005 assignment participant composite FK as a distinct case.
+- KEY-006 site-link participant composite FK as a distinct case.
+- KEY-007 assignment site composite FK.
+- KEY-008 site-link site composite FK.
+- KEY-011 duplicate Seller partial unique index (current explicit duplicate-role fixture covers Buyer).
+- KEY-018 controlled status/action vocabulary.
+- PAR-002 assignment cross-tenant participant tuple, PAR-003 site-link cross-tenant site tuple, and PAR-008 invalid status/action as defined by the canonical matrix.
+- PAR-015 paired ordinary-app-role audit UPDATE and DELETE behavior across both engines.
+- Full AUTH-001–AUTH-015 business-operation matrix against the authoritative API and replay pipeline.
 
-DEC-008 remains OPEN until the complete accepted schema contract is represented in both engines; PAR-001–019 are executable and pass; the complete canonical production schema and all remaining domain acceptance criteria are represented; concurrency and rollback tests pass; engine versions and schema fingerprints are retained; all divergences are dispositioned; and the exact tested commit SHA is reviewed.
+Some related properties are exercised by other tests, but related coverage is not equivalent to a direct acceptance test. The current reduced DDL is synthetic and does not represent the complete canonical production schema or all Web/Mobile/Desktop implementations.
+
+## Decision
+
+**GH-06 harness execution: PASS. DEC-008: OPEN.** Do not describe the 19 synthetic passes as complete canonical parity or use them to approve schema freeze. The remaining matrix rows must be implemented as direct tests against canonical DDL and reconciled to the exact acceptance IDs before GH-06 can close.

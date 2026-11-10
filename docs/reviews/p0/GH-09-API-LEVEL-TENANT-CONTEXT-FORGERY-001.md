@@ -1,74 +1,43 @@
-# GH-09 — API-Level Tenant Context Forgery and Pool Isolation
+# GH-09 — API Identity Provenance, POOL-01 and SEC-02
 
-**Status:** DISPOSABLE API/POOL/SECURITY HARNESS PASS — REAL IDP AND PRODUCTION INTEGRATION NOT EVIDENCED — RLS-016 BLOCKED  
+**Status:** DISPOSABLE CONTRACT TESTS PASS — PRODUCTION API CONTEXT INTEGRATION BLOCKED  
 **Date:** 2026-11-10  
-**Branch:** `review/p0-domain-schema-readonly-2026-11-10`  
-**Scope:** Disposable PostgreSQL fixture and test-only HTTP adapter. No staging/production database or application runtime is modified.
+**Branch:** `review/p0-domain-schema-readonly-2026-11-10`
 
-## 1. Baseline finding
+## Evidence
 
-The repository API runtime currently uses `better-sqlite3` and the enterprise authorization module accepts a SQLite-compatible database. No PostgreSQL pool, PostgreSQL transaction context middleware, or PostgreSQL-backed production API route is present in the inspected runtime. Therefore GH-09 cannot honestly claim that production API context derivation has been implemented.
+- Workflow: [GH-09 run 42778888308](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42778888308)
+- Tested SHA: `31bcb316d8346c6e6c665d5817aab307d0c98bc3`
+- PostgreSQL: 16.10
+- Result: **13 PASS, 0 FAIL; RLS-016 BLOCKED**
+- Artifact ID: `13744653963`
+- Artifact SHA-256: `73ecb9de622e47a9a1836eb6707eefc8dc1b8784b32459f3f44a4cc68856438a`
+- API harness SHA-256: `4ec74095eaade2bb50f34e36db1afe9d289251df308ea3fffab9988742df2f7e`
 
-The new HTTP adapter is an executable security-contract harness. It demonstrates and tests the required trust-boundary behavior against the disposable PostgreSQL fixture. It is not wired into `server/index.mjs` and must not be treated as production authorization evidence.
+## What was executed
 
-## 2. Test contract implemented
+The harness imports and invokes the repository's actual `createSupabaseAuth` middleware from `server/auth.mjs`, including its `authenticate` and `requireAdmin` handlers. The identity-provider fetcher is mocked and returns a fixed synthetic token-to-user mapping. It deliberately supplies user-editable `user_metadata.role=admin`; the middleware does not treat that metadata as an admin grant.
 
-The disposable suite was expanded and executed in GitHub Actions:
+| Area | Tests | Result |
+|---|---:|---|
+| Authentication and membership-derived tenant context | API-001–004 | 4 PASS |
+| Forged identity, tenant and role inputs | SEC-02-001–004 | 4 PASS |
+| Context cleanup after commit, rollback and timeout | POOL-01-001–003 | 3 PASS |
+| Concurrent HTTP requests reusing one backend connection | POOL-01-004 | 1 PASS |
+| Privileged action self-grant blocked | SEC-02-005 | 1 PASS |
+| **Total** | | **13 PASS, 0 FAIL** |
 
-- Workflow: [GH-09 run 42778082873](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42778082873)
-- Tested code SHA: `3b6a17be43179ce3d575c0092daca4264916419a`
-- Result: 13 PASS, 0 FAIL; RLS-016 remains BLOCKED.
-- PostgreSQL service: 16.10; `app_api` is NOSUPERUSER, NOBYPASSRLS and NOCREATEROLE.
-- Artifact: `gh09-pool-sec02-3b6a17be43179ce3d575c0092daca4264916419a`.
+The HTTP harness also proves that request body, query and header values do not replace the identity established by the auth middleware. Tenant selection is checked against active membership. The disposable `app_api` role is NOSUPERUSER, NOBYPASSRLS and NOCREATEROLE.
 
-### Expanded adversarial cases
+## Important limits
 
-- API-001–004: unauthenticated, forged tenant selector, body tenant forgery, revoked membership.
-- SEC-02-001–004: forged user ID in headers/query/body, invalid bearer, unauthorized tenant selection, client-supplied admin/role claims.
-- SEC-02-005: ordinary `app_api` cannot insert a privileged `contract.approve` mapping.
-- POOL-01-001–004: context reset after commit, rollback, statement timeout, and concurrent requests reusing a max-one connection.
+1. **The identity provider is mocked.** This exercises the real middleware code path, but does not call Supabase or validate a real JWT/signature, key rotation, issuer, audience, or live user state.
+2. **The API harness is not the production server.** The repository's current runtime still uses `better-sqlite3`; it has no PostgreSQL-backed production route/pool context integration. The adapter is test-only.
+3. **Membership lookup uses a privileged fixture connection.** This is not an approved production resolver design. Production must use a least-privilege backend-only membership resolver.
+4. **Pool size is one.** Concurrent HTTP requests queue on the same backend connection. This proves no context bleed on a reused connection, but does not establish multi-connection pool behavior, saturation, or failover.
+5. **Custom GUCs remain caller-settable by a SQL-capable `app_api` session.** Transaction-local context prevents connection reuse leakage; it is not a cryptographic identity assertion and does not protect against arbitrary SQL execution under the application role.
+6. **Production grants are not inspected.** The fixture revokes INSERT/UPDATE/DELETE on `transaction_access_assignment_actions`; production grants must be audited independently.
 
-### Important identity-provider limitation
+## Decision
 
-The adapter uses a fixed synthetic token-to-user map. It proves that request-controlled user/tenant/role fields do not override the server-established test identity and that the database pool uses transaction-local context. It does **not** prove real Supabase token verification, production API wiring, or the actual production membership resolver. The real production `createSupabaseAuth` path is separate and the repository API still uses SQLite.
-
-## 2. Test contract implemented
-
-`tests/p0-db-gates/api-context-test.mjs` starts a test-only Express HTTP server and uses:
-- A fixed test bearer-token identity map; no production identity provider or credentials.
-- A control-plane membership lookup through the disposable fixture's admin connection.
-- A separate `app_api` pool with `max: 1`, `NOSUPERUSER`, and `NOBYPASSRLS`.
-- Transaction-local `set_config(..., true)` for `app.tenant_id` and `app.user_id`.
-- Commit/rollback and connection release in a `finally` path.
-
-The request tenant header is only a consistency selector. A mismatched selector is rejected. Request body tenant fields are never used to establish database context. The selected tenant is derived from the authenticated test identity's active membership.
-
-**Important:** The admin connection and static identity map are disposable-fixture conveniences only. They are not an approved production design. A production implementation must use a narrowly privileged membership/context resolver and must never expose database credentials or context-setting capability to clients.
-
-## 3. Negative-access and isolation cases
-
-| Case | Expected behavior |
-|---|---|
-| API-001 unauthenticated request | HTTP 401 |
-| API-002 forged tenant header | HTTP 403 |
-| API-003 body contains another tenant | Context remains membership-derived; only own tenant rows visible |
-| API-004 revoked membership | HTTP 403 |
-| API-005 same pooled backend connection reused | Transaction-local tenant and user context are NULL; no audit rows visible |
-
-The RLS runner consumes `artifacts/api-context.json`. It only reports RLS-016 PASS if all five API cases pass and the API evidence explicitly reports RLS-016 PASS. The harness intentionally reports RLS-016 BLOCKED while it remains a test-only adapter, so a successful adapter test cannot silently promote the production decision.
-
-## 4. Workflow integration
-
-`.github/workflows/p0-disposable-db-gates.yml` now runs the API context suite after fixture initialization and before the RLS suite. It preserves `api-context.json`, records `api_exit`, hashes the new test script in the evidence manifest, uploads the artifact even on failure, and includes the API suite in the fail-closed final gate.
-
-## 5. Remaining acceptance criteria to clear RLS-016
-
-1. Implement the PostgreSQL-backed API route/context middleware in the authoritative production backend after the database architecture and migration plan are approved.
-2. Authenticate using the real verified identity provider; never trust a client-supplied user or tenant context.
-3. Resolve active membership through a least-privilege backend-only resolver. Do not use a superuser membership lookup in production.
-4. Derive tenant and user context server-side and set it transaction-locally on the exact pooled connection used by protected queries.
-5. Guarantee rollback and connection release on all error paths; verify reset on a reused connection and under concurrent requests.
-6. Add negative tests for forged header, body, query, and alternate context selectors; cross-tenant reads/writes; revoked membership; unauthenticated access; and pool contamination.
-7. Run those tests against the actual production API composition with the disposable PostgreSQL service, then attach same-SHA Actions evidence.
-
-Until those criteria are met, **RLS-016 remains BLOCKED, DEC-006 remains OPEN, and schema freeze remains NOT APPROVED**. The disposable harness pass must not be promoted to production API security evidence.
+The disposable contract is tested and passes. **RLS-016 / DEC-006 remains BLOCKED** until the actual authoritative API uses verified identity, a least-privilege membership resolver, and a PostgreSQL pool; the same adversarial and pool-reset tests must run against that production composition. No schema freeze is approved.
