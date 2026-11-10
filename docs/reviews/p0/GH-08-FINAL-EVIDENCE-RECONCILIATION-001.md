@@ -16,7 +16,7 @@
 | GH-05 embedded parity | same run / same SHA | 25 relational + 4 temporal PASS | Included in GH-05 artifact |
 | GH-06 parity | [42801376099](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42801376099) / `1ea10b53a6579a135daff15ed72e2d7570a0a2dc` | 25 relational + 4 temporal PASS | Artifact `13757005838`, SHA-256 `4a9b9d3f0a2f5a14a9775ad761d420bd4b18521b7a9a5ab79627a2e8b89cdce5` |
 | GH-09 / POOL-01 / SEC-02 | [42800442353](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42800442353) / `e402474ecceb9cd86efd3e3e39b9f24e85127b66` | 13 PASS, 0 FAIL; RLS-016 BLOCKED | Artifact `13755906103`, SHA-256 `9e39d21c98d9fdb1ae02821e4d28a74bb8c4ccd36b9aee1ab589c405f59765d5` |
-| Mobile CI | [42801375937](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42801375937) / `1ea10b53a6579a135daff15ed72e2d7570a0a2dc` | Check current workflow status separately; not an authorization gate | Workflow run |
+| Mobile CI | [42801375937](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42801375937) / `1ea10b53a6579a135daff15ed72e2d7570a0a2dc` | SUCCESS | Workflow run |
 
 All disposable database workflows completed successfully. PostgreSQL 16.10 was used; GH-06 parity also used SQLite 3.53.4. Artifacts contain synthetic test evidence only.
 
