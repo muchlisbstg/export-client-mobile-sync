@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import pg from 'pg';
+import fs from 'node:fs';
 const {Client}=pg;
 const admin=new Client({connectionString:process.env.PG_ADMIN_URL});
 await admin.connect();
@@ -33,7 +34,18 @@ await test('RLS-012',async()=>assert.equal((await as('tenant-s','user-s',()=>rol
 await test('RLS-013',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT a.* FROM audit_events a JOIN tenants t ON t.id=a.tenant_id WHERE a.id='audit-s'"))).rows.length,0));
 await test('RLS-014',async()=>assert.equal((await as(null,null,()=>role.query("SELECT * FROM tenants"))).rows.length,0));
 await test('RLS-015',async()=>{await as('tenant-a','user-a',()=>role.query("SELECT * FROM audit_events"));assert.equal((await as(null,null,()=>role.query("SELECT * FROM audit_events"))).rows.length,0);});
-results.push({id:'RLS-016',status:'BLOCKED',reason:'Client-to-server context forgery must be tested at the HTTP/API boundary. A database session variable is trusted only because direct database access is restricted to the backend; a SQL-level test cannot prove the API rejects client-supplied tenant context.'});
+const apiEvidencePath=process.env.API_CONTEXT_EVIDENCE_PATH ?? 'artifacts/api-context.json';
+let apiContextPassed=false;
+try {
+  const apiEvidence=JSON.parse(fs.readFileSync(apiEvidencePath,'utf8'));
+  const apiCases=apiEvidence.results?.filter(x=>x.id.startsWith('API-')) ?? [];
+  apiContextPassed=apiEvidence.results?.some(x=>x.id==='RLS-016' && x.status==='PASS') === true
+    && apiCases.length === 5
+    && apiCases.every(x=>x.status==='PASS');
+} catch {}
+results.push(apiContextPassed
+  ? {id:'RLS-016',status:'PASS',evidence:'GH-09 HTTP/API tenant-context and pooled-connection reset tests passed; see api-context.json.'}
+  : {id:'RLS-016',status:'BLOCKED',reason:'GH-09 HTTP/API trust-boundary evidence missing or incomplete; see api-context.json.'});
 await test('RLS-017',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("DELETE FROM audit_events WHERE id='audit-a'")));});
 await test('RLS-018',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT * FROM (SELECT * FROM audit_events) q WHERE id='audit-s'"))).rows.length,0));
 await role.end(); await admin.end();
