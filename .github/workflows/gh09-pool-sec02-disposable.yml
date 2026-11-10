@@ -1,0 +1,99 @@
+name: GH-09 API Context, POOL-01 Isolation and SEC-02 Forgery Gates
+
+on:
+  push:
+    branches:
+      - review/p0-domain-schema-readonly-2026-11-10
+    paths:
+      - "tests/p0-db-gates/api-context-test.mjs"
+      - "tests/p0-db-gates/postgres-rls.sql"
+      - ".github/workflows/gh09-pool-sec02-disposable.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gh09-pool-sec02-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-context-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16.10
+        env:
+          POSTGRES_DB: gates
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gates"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PG_ADMIN_URL: postgres://postgres:postgres@localhost:5432/gates
+      PG_API_URL: postgres://app_api:app_api_test_only@localhost:5432/gates
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare evidence directory
+        run: mkdir -p artifacts && printf 'candidate_sha=%s\\n' "$GITHUB_SHA" > artifacts/run-context.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked repository dependencies
+        run: npm ci
+      - name: Install disposable PostgreSQL client dependency without lockfile mutation
+        run: npm install --no-save --package-lock=false pg@8.16.3
+      - name: Initialize disposable RLS fixture
+        id: fixture
+        shell: bash
+        run: |
+          set +e
+          psql "$PG_ADMIN_URL" -v ON_ERROR_STOP=1 -f tests/p0-db-gates/postgres-rls.sql > artifacts/fixture.log 2>&1
+          result=$?
+          set -e
+          echo "exit_code=$result" > artifacts/fixture-status.txt
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
+      - name: Run GH-09, POOL-01 and SEC-02 suites
+        id: suite
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ "${{ steps.fixture.outputs.exit_code }}" = "0" ]; then
+            node tests/p0-db-gates/api-context-test.mjs > artifacts/api-context.json 2>&1
+            result=$?
+          else
+            printf '{"status":"NOT_RUN","reason":"fixture initialization failed"}\\n' > artifacts/api-context.json
+            result=125
+          fi
+          set -e
+          echo "suite_exit=$result" >> "$GITHUB_OUTPUT"
+          {
+            echo "candidate_sha=$GITHUB_SHA"
+            echo "postgres_image=postgres:16.10"
+            echo "node_version=$(node --version)"
+            echo "api_context_sha256=$(sha256sum tests/p0-db-gates/api-context-test.mjs | cut -d' ' -f1)"
+            echo "fixture_sha256=$(sha256sum tests/p0-db-gates/postgres-rls.sql | cut -d' ' -f1)"
+          } > artifacts/evidence-manifest.txt
+      - name: Upload sanitized GH-09 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gh09-pool-sec02-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce fail-closed GH-09 suite result
+        if: always()
+        run: test "${{ steps.fixture.outputs.exit_code }}" = "0" && test "${{ steps.suite.outputs.suite_exit }}" = "0"

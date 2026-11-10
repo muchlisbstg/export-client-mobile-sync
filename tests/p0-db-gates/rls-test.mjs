@@ -43,6 +43,10 @@ await test('RLS-025',async()=>assert.equal((await as('tenant-a','user-ghost',()=
 await test('RLS-026',async()=>assert.equal((await as('tenant-a','user-ghost',()=>role.query("SELECT * FROM transaction_site_links"))).rows.length,0));
 await test('RLS-027',async()=>assert.equal((await as('tenant-a','user-ghost',()=>role.query("SELECT * FROM audit_events"))).rows.length,0));
 await test('RLS-028',async()=>assert.equal((await as('tenant-a','user-a2',()=>role.query("SELECT * FROM transaction_access_assignment_actions WHERE assignment_id='assign-a'"))).rows.length,0));
+await test('RLS-029',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("INSERT INTO transaction_access_assignment_actions VALUES ('assign-a','contract.approve')")));});
+await test('RLS-030',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("UPDATE transaction_access_assignment_actions SET action_code='goods.release' WHERE assignment_id='assign-a' AND action_code='site.inspect'")));});
+await test('RLS-031',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("DELETE FROM transaction_access_assignment_actions WHERE assignment_id='assign-a' AND action_code='site.inspect'")));});
+
 await test('RLS-019',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("INSERT INTO tenant_memberships VALUES ('forged-member','tenant-a','user-b','active')")));});
 await test('RLS-020',async()=>{await assert.rejects(()=>as('tenant-a','user-old',()=>role.query("INSERT INTO transaction_participants VALUES ('forged-part','tenant-a','tx-2','supplier','active')")));});
 await test('RLS-021',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("INSERT INTO transaction_site_links VALUES ('forged-link','tenant-a','tx-1','part-b','site-a','active')")));});

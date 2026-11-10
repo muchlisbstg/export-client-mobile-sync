@@ -32,12 +32,16 @@ CREATE POLICY participant_scope ON transaction_participants USING(tenant_id=app_
 CREATE POLICY site_scope ON supply_sites USING(tenant_id=app_tenant() AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active')) WITH CHECK(tenant_id=app_tenant() AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active'));
 CREATE POLICY site_link_scope ON transaction_site_links USING(tenant_id=app_tenant() AND status='active' AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active')) WITH CHECK(tenant_id=app_tenant() AND status='active' AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active') AND EXISTS(SELECT 1 FROM transaction_participants p WHERE p.id=participant_id AND p.tenant_id=app_tenant() AND p.transaction_id=transaction_id AND p.status='active'));
 CREATE POLICY assignment_scope ON transaction_access_assignments USING(tenant_id=app_tenant() AND status='active' AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.id=membership_id AND m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active') AND EXISTS(SELECT 1 FROM transaction_participants p WHERE p.id=participant_id AND p.tenant_id=app_tenant() AND p.transaction_id=transaction_id AND p.status='active') AND EXISTS(SELECT 1 FROM transaction_site_links l WHERE l.id=site_link_id AND l.tenant_id=app_tenant() AND l.transaction_id=transaction_id AND l.participant_id=participant_id AND l.site_id=site_id AND l.status='active')) WITH CHECK(tenant_id=app_tenant() AND status='active' AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.id=membership_id AND m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active') AND EXISTS(SELECT 1 FROM transaction_participants p WHERE p.id=participant_id AND p.tenant_id=app_tenant() AND p.transaction_id=transaction_id AND p.status='active') AND EXISTS(SELECT 1 FROM transaction_site_links l WHERE l.id=site_link_id AND l.tenant_id=app_tenant() AND l.transaction_id=transaction_id AND l.participant_id=participant_id AND l.site_id=site_id AND l.status='active'));
-CREATE POLICY assignment_action_scope ON transaction_access_assignment_actions USING(EXISTS(SELECT 1 FROM transaction_access_assignments a WHERE a.id=assignment_id AND a.tenant_id=app_tenant() AND a.status='active')) WITH CHECK(EXISTS(SELECT 1 FROM transaction_access_assignments a WHERE a.id=assignment_id AND a.tenant_id=app_tenant() AND a.status='active'));
+CREATE POLICY assignment_action_scope ON transaction_access_assignment_actions FOR SELECT USING(EXISTS(SELECT 1 FROM transaction_access_assignments a WHERE a.id=assignment_id AND a.tenant_id=app_tenant() AND a.status='active'));
+-- Fail closed: ordinary app_api cannot self-grant or rewrite privilege mappings.
+-- Future controlled grant management requires a separately authorized service boundary.
+
 CREATE POLICY audit_scope ON audit_events USING(tenant_id=app_tenant() AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active')) WITH CHECK(tenant_id=app_tenant() AND EXISTS(SELECT 1 FROM tenant_memberships m WHERE m.tenant_id=app_tenant() AND m.user_id=app_user() AND m.status='active') AND EXISTS(SELECT 1 FROM transaction_participants p WHERE p.tenant_id=app_tenant() AND p.transaction_id=audit_events.transaction_id AND p.status='active'));
 CREATE POLICY actions_read ON permission_actions FOR SELECT USING(active=true);
 
 GRANT USAGE ON SCHEMA public TO app_api;
-GRANT SELECT,INSERT,UPDATE,DELETE ON tenants,tenant_memberships,commercial_transactions,transaction_participants,supply_sites,transaction_site_links,transaction_access_assignments,transaction_access_assignment_actions,audit_events TO app_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON tenants,tenant_memberships,commercial_transactions,transaction_participants,supply_sites,transaction_site_links,transaction_access_assignments,audit_events TO app_api;
+GRANT SELECT ON transaction_access_assignment_actions TO app_api;
 GRANT SELECT ON permission_actions TO app_api;
 GRANT EXECUTE ON FUNCTION app_tenant(),app_user() TO app_api;
 
@@ -52,6 +56,6 @@ INSERT INTO transaction_site_links VALUES ('link-a','tenant-a','tx-1','part-a','
 INSERT INTO transaction_access_assignments VALUES ('assign-a','tenant-a','tx-1','part-a','site-a','link-a','member-a','active'),('assign-s','tenant-s','tx-1','part-s','site-s','link-s','member-s','active');
 INSERT INTO permission_actions VALUES ('site.inspect',true),('contract.approve',true),('payment.approve',true),('goods.release',true);
 INSERT INTO transaction_access_assignment_actions VALUES ('assign-a','site.inspect'),('assign-s','site.inspect');
-INSERT INTO audit_events VALUES ('audit-a','tenant-a','tx-1','created'),('audit-s','tenant-s','tx-1','created');
+INSERT INTO audit_events VALUES ('audit-a','tenant-a','tx-1','created'),('audit-b','tenant-b','tx-1','created'),('audit-s','tenant-s','tx-1','created');
 ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 REVOKE UPDATE,DELETE ON audit_events FROM app_api;
