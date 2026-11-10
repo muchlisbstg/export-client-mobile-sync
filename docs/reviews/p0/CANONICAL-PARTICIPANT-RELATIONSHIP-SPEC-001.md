@@ -7,14 +7,7 @@
 
 ## 1. Purpose and terminology
 
-This specification defines the canonical party-tenant-to-transaction relationship. It separates four concepts:
-
-- Legal party: contractual legal identity.
-- Tenant: independently governed identity and isolation boundary.
-- Participant: tenant's approved relationship to one transaction.
-- Assignment: user-specific, action- and resource-bounded authorization within a participant.
-
-A participant is not a user role, tenant membership, contract signature, or unrestricted transaction permission.
+This specification separates legal party, tenant, participant, tenant membership, site link and user assignment. A participant is not a user role, tenant membership, contract signature, or unrestricted transaction permission.
 
 ## 2. Relationship cardinalities
 
@@ -22,151 +15,132 @@ A participant is not a user role, tenant membership, contract signature, or unre
 |---|---|
 | Tenant → current verified legal-party binding | Zero or one at any instant; historical versions retained |
 | Tenant → transaction participant | At most one row per transaction (`UNIQUE tenant_id, transaction_id`) |
-| Transaction → Buyer participant | Exactly one when transaction enters approved commercial state; at most one during draft/invitation lifecycle |
-| Transaction → Seller participant | Exactly one when transaction enters approved commercial state; at most one during draft/invitation lifecycle |
+| Transaction → Buyer participant | At most one during draft/invitation; exactly one before approved commercial activation |
+| Transaction → Seller participant | At most one during draft/invitation; exactly one before approved commercial activation |
 | Transaction → Supplier participants | Zero or more; each Supplier tenant has at most one participant row |
 | Participant → user assignments | Zero or more |
 | Participant → site links | Zero or more |
-| Assignment → action grants | One or more for an active assignment; each action must exist and be active |
+| Site link → user assignments | Zero or more; assignment references exact site-link row |
+| Tenant membership → assignments | Zero or more; assignment references stable membership identity |
 | Site → owner tenant | Exactly one |
 
-The one-Buyer and one-Seller role cardinalities are logical transaction invariants. They require explicit physical enforcement (e.g. role-filtered unique indexes plus lifecycle validation); DEC-002 alone only approves uniqueness by tenant/transaction.
-
-## 3. Canonical logical entities
+## 3. Canonical logical entities and keys
 
 ### 3.1 tenant_legal_party_bindings
 
-Required attributes:
-- `id`, `tenant_id`, `legal_party_id`
-- `verification_status`
-- `effective_from`, `effective_until`
-- `verified_by`, `evidence_reference`, `audit_reference`
-- creation timestamp and version/history attribution
+Required: `id`, `tenant_id`, `legal_party_id`, verification status, effective period, verifier, evidence/audit reference and version metadata.
 
-Invariant: no overlapping verified/effective binding periods for one tenant. A verified record requires evidence and verifier attribution. Rebinding creates a new version; history is retained.
+Candidate key: `UNIQUE(id,tenant_id,legal_party_id)`.
+
+Invariant: no overlapping verified/effective binding periods per tenant. Verified binding requires evidence and verifier attribution. Historical rows remain retained and identity/evidence fields are immutable.
 
 ### 3.2 commercial_transactions
 
-Required attributes:
-- `id`
-- `buyer_party_id`, `seller_party_id`
-- controlled transaction lifecycle state
-- created/updated timestamps
-
-Invariant: Buyer and Seller legal-party IDs are distinct. A legal-party change after contract approval follows amendment and legal approval; tenant switching cannot rewrite a signed contract snapshot.
+Required: `id`, `buyer_party_id`, `seller_party_id`, controlled lifecycle state and audit timestamps. Buyer and Seller legal-party IDs must differ. After contract approval, party changes require formal amendment and legal approval; tenant rebinding cannot rewrite a signed contract snapshot.
 
 ### 3.3 transaction_participants
 
-Required attributes:
-- `id`, `tenant_id`, `transaction_id`, `legal_party_id`
-- `participant_role`: `buyer | seller | supplier`
-- `participation_status`
-- `effective_from`, `effective_until`
-- approval actor/reference and audit timestamps
+Required: `id`, `tenant_id`, `transaction_id`, `legal_party_id`, `tenant_legal_party_binding_id`, role, participation status, effective period and approval/audit attribution.
 
-Normative candidate keys:
+Candidate keys:
 ```sql
 PRIMARY KEY (id);
 UNIQUE (tenant_id, transaction_id);
 UNIQUE (id, tenant_id, transaction_id);
+UNIQUE (id, tenant_id, legal_party_id);
 ```
 
-DEC-002: one participant per tenant/transaction. Different Supplier tenants may participate in the same transaction. A participant can have multiple user assignments and site links.
+**Binding-version rule:** `tenant_legal_party_binding_id` is required and NOT NULL. Composite FK references the exact `(id,tenant_id,legal_party_id)` binding row. Participant approval validates that this binding was verified and effective at the approval instant. The historical participant remains pinned to that version if the tenant later rebinds.
+
+DEC-002 permits multiple Supplier tenants on one transaction while limiting each tenant to one participant row per transaction.
 
 Role invariants:
-- Buyer participant legal party must equal `commercial_transactions.buyer_party_id`.
-- Seller participant legal party must equal `commercial_transactions.seller_party_id`.
-- Buyer and Seller tenant identities must be distinct.
-- Supplier uses an independent tenant and its verified legal-party binding; Supplier is not a role inside Buyer/Seller tenant.
+- Buyer legal party equals transaction `buyer_party_id`; Seller equals `seller_party_id`.
+- Exactly one Buyer and one Seller participant before commercial activation; never more than one at any point.
+- Buyer and Seller tenants are distinct.
+- Supplier uses its independent tenant and verified binding; Supplier is not a role inside Buyer/Seller tenant.
 - Supplier participation requires explicit approval and bounded operational scope.
-- A pending, suspended, revoked or expired participant grants no operational access.
+- Pending, suspended, revoked or expired participant grants no operational access.
 
-**Schema-review refinement (not yet approved):** add a reference to the exact tenant/legal-party binding version used for participant approval, e.g. `tenant_legal_party_binding_id`, with a composite FK to `(id, tenant_id, legal_party_id)`. This prevents an old participant from silently inheriting a later tenant rebinding. The field name and lifecycle semantics require reviewer approval before freeze.
+### 3.4 tenant_memberships
 
-### 3.4 transaction_site_links
+Membership row has stable `id`, `tenant_id`, `user_id`, status and effective/audit fields. Candidate key `UNIQUE(id,tenant_id)`. Membership identity is retained; revoke/deactivate rather than hard-delete. If historical rows exist, stable identity and active membership uniqueness must be made explicit.
 
-Required attributes:
-- `id`, `tenant_id`, `transaction_id`, `participant_id`, `site_id`
-- purpose, link status, effective period, approval/audit attribution
+### 3.5 transaction_site_links
 
-Invariant: link must reference the same participant, tenant and transaction, and the site must be owned by the same tenant. Site link approval is distinct from user assignment.
+Required: `id`, `tenant_id`, `transaction_id`, `participant_id`, `site_id`, purpose, status, effective period and approval/audit attribution.
 
-### 3.5 transaction_access_assignments
+Candidate key: `UNIQUE(id,tenant_id,transaction_id,participant_id,site_id)`. It must reference the same participant/tenant/transaction and a site owned by the same tenant.
 
-Required attributes:
-- `id`, `tenant_id`, `transaction_id`, `participant_id`, `site_id`
-- `subject_user_id`
-- status, effective period, grant/revoke actor, reason and audit reference
+### 3.6 transaction_access_assignments
 
-Invariant: operational roles require an exact non-null site. Assignment must match participant, tenant, transaction and an active site link. User must have active membership in the participant tenant.
+Required: `id`, `tenant_id`, `transaction_id`, `participant_id`, `site_id`, `transaction_site_link_id`, `membership_id`, status, effective period and grant/revoke audit fields.
 
-### 3.6 permission_actions and transaction_access_assignment_actions
+- `membership_id` + `tenant_id` references stable tenant membership `(id,tenant_id)`; canonical assignment does not separately store `subject_user_id`.
+- `transaction_site_link_id` + tenant/transaction/participant/site references the exact site-link candidate key.
+- Assignment site is NOT NULL for operational access.
+- Membership and site link must be active/effective at grant and request time; FK identity alone does not prove lifecycle status.
 
-Action codes are canonical, normalized and lifecycle-controlled. Assignment-action rows reference both an assignment and an active action catalog entry. Free-form client action codes are prohibited.
+### 3.7 permission_actions
 
-## 4. Lifecycle contract
+Canonical normalized action catalog. Assignment-action rows reference a valid assignment and catalog action. Deprecated actions cannot be newly granted.
 
-Participant lifecycle: `invited → pending → active → suspended/revoked/expired`, with reactivation only through the approved approval path. Exact transition graph and terminal-state policy require review.
+## 4. Composite integrity contract
 
-- Buyer/Seller transaction-scope activation/reactivation requires bilateral approval by the relevant authorized representatives.
-- Supplier additionally requires explicit Supplier participation approval and bounded operational scope.
-- Unilateral protective suspension is permitted under the approved rule.
-- Pending participants receive no operational access.
-- Revocation/expiry blocks subsequent protected operations and preserves history.
-- Reassignment creates a new assignment; it does not overwrite revoked history.
-- Revocation is not a custody transfer; handover requires explicit custody acceptance and server confirmation.
+1. Assignment `(tenant_id,transaction_id)` → participant `(tenant_id,transaction_id)`.
+2. Assignment `(tenant_id,site_id)` → supply site `(tenant_id,id)`.
+3. Site link `(tenant_id,transaction_id)` → participant `(tenant_id,transaction_id)`.
+4. Site link `(tenant_id,site_id)` → supply site `(tenant_id,id)`.
+5. Every participant child tuple `(participant_id,tenant_id,transaction_id)` → participant `(id,tenant_id,transaction_id)`.
+6. Participant `(tenant_legal_party_binding_id,tenant_id,legal_party_id)` → binding `(id,tenant_id,legal_party_id)`.
+7. Assignment `(membership_id,tenant_id)` → membership `(id,tenant_id)`.
+8. Assignment `(transaction_site_link_id,tenant_id,transaction_id,participant_id,site_id)` → site link `(id,tenant_id,transaction_id,participant_id,site_id)`.
 
-## 5. Authorization predicate
+These constraints prove tuple consistency, not current approval, effective status or runtime authorization.
 
-For operational actions, allow only when all relevant predicates hold at request time:
+## 5. Lifecycle and authorization predicate
+
+Participant lifecycle: `invited → pending → active → suspended/revoked/expired`; reactivation follows approved approval path. Exact transition graph and terminal-state policy require review.
+
+For operational action, require at request time:
 
 ```text
 valid_session
-AND active_tenant_membership
+AND active_tenant_membership_for_assignment.membership_id
 AND server_established_tenant_context
 AND active_matching_transaction_participant
-AND active_transaction_site_link
-AND active_assignment_for_exact_user_and_site
+AND active_exact_transaction_site_link
+AND active_assignment_for_exact_membership_and_site
 AND active_assignment_action
 AND effective_time_window
 AND not_revoked_or_suspended
 AND applicable_contract_payment_custody_legal_syariah_policy
 ```
 
-Client-provided tenant, participant, site, role, action, status or offline timestamp is never proof. Missing or stale evidence fails closed. PostgreSQL is authoritative for shared state; SQLite is provisional local/offline state and cannot authorize final replay.
+Client-provided tenant, membership, participant, site, role, action, status or offline timestamp is never proof. Missing/stale evidence fails closed. PostgreSQL is authoritative for shared state; SQLite is provisional local/offline state and cannot authorize final replay.
 
-## 6. Composite integrity requirements
+- Buyer/Seller activation/reactivation requires bilateral approval by authorized representatives.
+- Supplier additionally requires explicit Supplier participation approval and bounded scope.
+- Unilateral protective suspension is permitted.
+- Pending participants receive no operational access.
+- Revocation/expiry blocks later protected operations and preserves history.
+- Reassignment creates new assignment; it does not overwrite revoked history.
+- Revocation is not custody transfer; handover requires explicit custody acceptance and server confirmation.
 
-1. Assignment `(tenant_id, transaction_id)` → participant `(tenant_id, transaction_id)`.
-2. Assignment `(tenant_id, site_id)` → supply site `(tenant_id, id)`.
-3. Site link `(tenant_id, transaction_id)` → participant `(tenant_id, transaction_id)`.
-4. Site link `(tenant_id, site_id)` → supply site `(tenant_id, id)`.
-5. Every row storing `participant_id` also references `(participant_id, tenant_id, transaction_id)` → participant `(id, tenant_id, transaction_id)`.
-6. Assignment's site must be linked to the same participant and transaction; a site-owner FK alone is insufficient.
-7. Assignment user must be a member of the same tenant; define a composite membership candidate key before physical implementation.
+## 6. Authority exclusions
 
-These constraints prove tuple consistency, not lifecycle, approval authority or current authorization.
+Supplier participation/assignment never grants contract signing/amendment, payment approval/settlement/ledger authority, goods-release authority, or access to unrelated tenants/unassigned sites.
 
-## 7. Explicit authority exclusions
+## 7. Remaining review items before schema freeze
 
-Supplier participation/assignment never grants:
-- contract signing or amendment authority;
-- payment approval, settlement or ledger authority;
-- goods-release authority;
-- authority to access unrelated tenant resources or unassigned sites.
+- Confirm actual membership-history model and stable membership identity.
+- Approve trigger/normalized relation strategy for role/legal-party matching and Buyer/Seller tenant distinctness.
+- Confirm exact approval evidence/actor-authority schema.
+- Finalize status transition graph and timestamp precision.
+- Define non-party service-provider delegation.
+- Finalize legal jurisdiction, identifiers, retention and verification evidence.
+- Close PostgreSQL RLS, SQLite runtime provenance and cross-engine parity evidence.
 
-## 8. Unresolved items before schema freeze
-
-- Exact role cardinality enforcement for Buyer/Seller.
-- Binding-version reference on participant rows.
-- Non-party service-provider delegation model.
-- Tenant-membership composite FK and user identity model.
-- Exact approval evidence and actor-authority schema.
-- Status transition graph and time-boundary semantics.
-- Transaction-wide exception representation (must not use NULL site).
-- Legal jurisdiction, identifiers, retention and verification evidence.
-- PostgreSQL RLS, SQLite runtime provenance and cross-engine parity.
-
-## 9. Governance
+## 8. Governance
 
 Logical contract only. No source-code change, DDL, migration, database execution, PR, merge, deployment or shared/live test is authorized.

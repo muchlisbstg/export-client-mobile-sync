@@ -1,6 +1,6 @@
 # CANONICAL-ENTITY-KEY-CONSTRAINT-MAPPING-001
 
-**Status:** LOGICAL MAPPING FOR REVIEW — NOT FROZEN  
+**Status:** INTEGRITY MAPPING COMPLETE FOR REVIEW — NOT FROZEN  
 **Date:** 2026-11-10  
 **Target:** Mobile / PostgreSQL authoritative + SQLite offline persistence  
 **Source baseline:** Web review package `docs/integrated-review-package-p0`, commit `dadedeebdb1e606e7cd436d28935b8f510693a00`  
@@ -8,186 +8,221 @@
 
 ## 1. Objective and freeze boundary
 
-This document consolidates the logical entity inventory, primary/candidate keys, foreign-key relationships, check/unique/temporal constraints and PostgreSQL–SQLite enforcement mapping.
+This document defines the canonical logical entity inventory, candidate keys, foreign keys, check/unique/temporal constraints and PostgreSQL–SQLite enforcement mapping. Four previously open integrity gaps now have one recommended resolution each:
 
-It is a design artifact. It does not freeze physical DDL, select final UUID storage implementation, approve migration ordering, or authorize database changes. Candidate refinements identified below remain review items.
+1. Participant pins the exact verified tenant/legal-party binding version.
+2. Buyer and Seller roles use independent filtered unique indexes.
+3. Assignment references a stable tenant-membership row, not a free-standing user ID.
+4. Assignment references the exact site-link row through a composite FK.
 
-**Authority:** DEC-001–DEC-005 are approved domain invariants. DEC-006 RLS design is open; DEC-007 SQLite runtime provenance is unverified; DEC-008 physical parity is unverified.
+These resolutions are **complete as a design proposal for review**, not approved physical DDL. The mapping does not freeze types, migrations, index rollout, triggers, or runtime behavior.
+
+**Domain authority:** DEC-001–DEC-005 approved. DEC-006 RLS design open; DEC-007 SQLite runtime provenance not verified; DEC-008 PostgreSQL/SQLite physical parity not verified.
 
 ## 2. Canonical entity inventory
 
 | Entity | Responsibility | Tenant scope |
 |---|---|---|
 | `tenants` | Independent organization identity/admin/isolation | Root |
-| `tenant_memberships` | User membership and tenant role grants | Tenant |
+| `tenant_memberships` | Stable user membership identity and tenant role grants | Tenant |
 | `legal_parties` | Contractual legal identity | Global/legal |
 | `tenant_legal_party_bindings` | Versioned verified tenant–legal-party link | Tenant |
 | `commercial_transactions` | Transaction and Buyer/Seller legal parties | Multi-party |
 | `transaction_participants` | Canonical tenant-to-transaction party participation | Tenant + transaction |
 | `supply_sites` | Site owned by one tenant | Tenant |
 | `transaction_site_links` | Participant-scoped transaction/site authorization relationship | Tenant + transaction + site |
-| `transaction_access_assignments` | User-specific operational grant | Tenant + participant + site |
+| `transaction_access_assignments` | Membership-specific operational grant | Tenant + participant + site link |
 | `permission_actions` | Controlled action vocabulary | Shared catalog |
 | `transaction_access_assignment_actions` | Assignment-to-action grants | Assignment |
 | `audit_events` | Attributable immutable/security-relevant event history | Tenant/transaction as applicable |
 
-## 3. Entity key map
+## 3. Canonical candidate-key map
 
-### 3.1 Root identity and legal identity
-
-| Entity | Primary key | Required candidate/unique keys | Required references |
-|---|---|---|---|
-| tenants | `id` | `UNIQUE(id)` implicit in PK | — |
-| tenant_memberships | `id` | **Review:** `UNIQUE(tenant_id,user_id)` or equivalent membership identity; must support active membership lookup | `tenant_id → tenants.id`; user identity → canonical users table |
-| legal_parties | `id` | Jurisdiction-scoped registration identifier uniqueness only after D-06 legal review | — |
-| tenant_legal_party_bindings | `id` | `UNIQUE(id,tenant_id,legal_party_id)` | `tenant_id → tenants.id`; `legal_party_id → legal_parties.id` |
-
-**DEC-001:** A tenant has at most one verified and currently effective binding at any instant. Retain historical versions. Verified records require verifier attribution and evidence. The temporal rule is not equivalent to a simple `UNIQUE(tenant_id,status)`.
-
-**Review refinement:** transaction participants should identify the exact binding version used at approval time, e.g. `tenant_legal_party_binding_id`, and reference `(binding_id,tenant_id,legal_party_id)`. Without a version reference, a later tenant rebinding can make historical participant identity ambiguous. This refinement is proposed, not yet approved.
-
-### 3.2 Transaction and participants
+### 3.1 Tenant membership and legal identity
 
 | Entity | Primary key | Required candidate/unique keys | Required references |
 |---|---|---|---|
-| commercial_transactions | `id` | Candidate key for `(id,buyer_party_id,seller_party_id)` if composite party checks are implemented declaratively | `buyer_party_id → legal_parties.id`; `seller_party_id → legal_parties.id` |
-| transaction_participants | `id` | **DEC-002:** `UNIQUE(tenant_id,transaction_id)`; `UNIQUE(id,tenant_id,transaction_id)` | `tenant_id → tenants.id`; `transaction_id → commercial_transactions.id`; `legal_party_id → legal_parties.id`; proposed binding-version composite FK |
+| `tenants` | `id` | PK | — |
+| `tenant_memberships` | `id` | `UNIQUE(id,tenant_id)`; `UNIQUE(tenant_id,user_id)` only if membership history is not multi-row | `tenant_id → tenants.id`; `user_id → canonical users.id` |
+| `legal_parties` | `id` | Jurisdiction-scoped registration identifier uniqueness only after D-06 legal review | — |
+| `tenant_legal_party_bindings` | `id` | `UNIQUE(id,tenant_id,legal_party_id)` | `tenant_id → tenants.id`; `legal_party_id → legal_parties.id` |
 
-Participant role cardinality:
-- `participant_role CHECK IN ('buyer','seller','supplier')`.
-- At most one Buyer participant per transaction.
-- At most one Seller participant per transaction.
-- Buyer and Seller tenant identities must differ.
-- Zero or more Supplier participants; each Supplier tenant remains independently governed.
-- DEC-002 already prevents the same tenant from creating multiple participant rows for the same transaction.
+**Membership resolution:** assignment stores `membership_id` + `tenant_id`; it does not duplicate `subject_user_id`. The assigned user is derived through the referenced membership row. This avoids a user ID that is not tied to a tenant membership identity. Membership rows are stable identities; revoke/deactivate rather than hard-delete. If the existing schema stores multiple membership-history rows, introduce a stable membership identity/current-row contract before implementation; do not weaken the FK to a user-only reference.
 
-**Physical enforcement proposal:** PostgreSQL partial unique indexes on `(transaction_id)` filtered separately for `participant_role='buyer'` and `participant_role='seller'`; SQLite partial unique indexes where supported by the minimum runtime version, otherwise equivalent triggers. Confirm supported SQLite version before freeze. This is not an approval to create those indexes.
+**DEC-001 binding lifecycle:** a tenant has at most one verified/effective binding at any instant. Binding history is versioned and retained. Verified rows require verifier attribution and evidence. Use half-open intervals `[effective_from,effective_until)`; NULL `effective_until` means unbounded future. Adjacent intervals are valid; overlapping verified intervals for one tenant are not.
 
-**Role/legal-party matching:** Buyer participant's `legal_party_id` must equal transaction `buyer_party_id`; Seller participant's `legal_party_id` must equal `seller_party_id`. A normal FK cannot express a role-dependent reference to one of two transaction columns. Use a reviewed trigger/constraint-trigger or a normalized transaction-party relation with composite FK. Do not rely only on application code without negative tests.
-
-### 3.3 Site and assignment entities
+### 3.2 Transaction and participant keys
 
 | Entity | Primary key | Required candidate/unique keys | Required references |
 |---|---|---|---|
-| supply_sites | `id` | `UNIQUE(tenant_id,id)` | `tenant_id → tenants.id` |
-| transaction_site_links | `id` | `UNIQUE(id,tenant_id,transaction_id,participant_id,site_id)` if selected as target for child consistency | Four-part relationship described below |
-| transaction_access_assignments | `id` | `UNIQUE(id,tenant_id,transaction_id,participant_id,site_id)` if selected for action child consistency | Participant, site, membership, site-link relationships |
-| transaction_access_assignment_actions | Composite `(assignment_id,action_code)` | PK or UNIQUE on pair | `assignment_id → transaction_access_assignments.id`; `action_code → permission_actions.action_code` |
-| permission_actions | `action_code` | PK; canonical unique code | — |
-| audit_events | `id` | PK; idempotency/correlation uniqueness as separately specified | Actor/tenant/transaction references where retained |
+| `commercial_transactions` | `id` | `UNIQUE(id,buyer_party_id,seller_party_id)` only if used as a composite FK target | Buyer/Seller legal party FKs |
+| `transaction_participants` | `id` | `UNIQUE(tenant_id,transaction_id)`; `UNIQUE(id,tenant_id,transaction_id)`; `UNIQUE(id,tenant_id,legal_party_id)` | Tenant, transaction, legal party, exact binding version |
 
-The exact composite candidate keys for site links and assignments depend on whether downstream FKs need to prove exact site-link membership or action-grant ownership. Do not add redundant unique indexes without a declared FK consumer.
+Participant required columns include `tenant_id`, `transaction_id`, `legal_party_id`, `tenant_legal_party_binding_id`, `participant_role`, lifecycle status, effective period, approval actor/reference and audit timestamps.
 
-## 4. Composite foreign-key contract
+**Resolved GAP-1 — binding version:** `tenant_legal_party_binding_id` is required and NOT NULL for every participant. Enforce:
 
-### 4.1 Parent candidate keys
+```sql
+UNIQUE (id, tenant_id, legal_party_id)
+FOREIGN KEY (tenant_legal_party_binding_id, tenant_id, legal_party_id)
+  REFERENCES tenant_legal_party_bindings (id, tenant_id, legal_party_id)
+```
 
-Required parent keys:
+The referenced binding row is the exact verified legal-identity version approved for this participant. It must have been verified and effective at participant approval time. Later tenant rebinding does not rewrite historical participant identity or retarget the FK. Binding identity columns and verification evidence are immutable; lifecycle closure is recorded by a controlled effective-until update plus audit. The FK proves tuple identity, not verification status or effective time; those require a transactionally enforced lifecycle check and backend authorization.
+
+**Resolved GAP-2 — Buyer/Seller role uniqueness:** enforce one Buyer and one Seller participant per transaction with separate filtered unique indexes:
+
+```sql
+CREATE UNIQUE INDEX uq_transaction_participants_one_buyer
+  ON transaction_participants (transaction_id)
+  WHERE participant_role = 'buyer';
+
+CREATE UNIQUE INDEX uq_transaction_participants_one_seller
+  ON transaction_participants (transaction_id)
+  WHERE participant_role = 'seller';
+```
+
+The same partial-index predicates are supported by PostgreSQL and SQLite (SQLite 3.8.0+). Pin and verify the deployed SQLite version before freeze. DEC-002's `UNIQUE(tenant_id,transaction_id)` remains independently required. Supplier rows remain zero-to-many, each from a different Supplier tenant.
+
+Buyer/Seller legal-party matching is role-dependent: Buyer participant `legal_party_id` equals transaction `buyer_party_id`; Seller equals `seller_party_id`. Enforce through reviewed insert/update/activation triggers or a normalized transaction-party relation with composite FKs. Also enforce Buyer and Seller tenant IDs differ before transaction activation. Partial unique indexes alone do not prove these cross-row invariants.
+
+### 3.3 Site and assignment keys
+
+| Entity | Primary key | Required candidate/unique keys | Required references |
+|---|---|---|---|
+| `supply_sites` | `id` | `UNIQUE(tenant_id,id)` | `tenant_id → tenants.id` |
+| `transaction_site_links` | `id` | `UNIQUE(id,tenant_id,transaction_id,participant_id,site_id)` | Participant and tenant-owned site |
+| `transaction_access_assignments` | `id` | `UNIQUE(id,tenant_id,transaction_id,participant_id,site_id)` only if a downstream child FK requires it | Participant, site, exact site-link row, membership |
+| `transaction_access_assignment_actions` | Composite `(assignment_id,action_code)` | PK on pair | Assignment + action catalog |
+| `permission_actions` | `action_code` | PK | — |
+| `audit_events` | `id` | PK; idempotency/correlation uniqueness separately specified | Actor/tenant/transaction references as retained |
+
+**Resolved GAP-3 — membership consistency:** `transaction_access_assignments` stores `membership_id` and `tenant_id`, with:
+
+```sql
+UNIQUE (id, tenant_id) -- on tenant_memberships
+FOREIGN KEY (membership_id, tenant_id)
+  REFERENCES tenant_memberships (id, tenant_id)
+```
+
+The assignment's effective user is obtained from `tenant_memberships.user_id`. No independent `subject_user_id` is stored in the canonical assignment row. Membership status must still be active at authorization time; the FK does not prove active status. Membership deletion is RESTRICT; revocation is a status transition with audit history.
+
+**Resolved GAP-4 — exact site-link consistency:** `transaction_access_assignments` stores `transaction_site_link_id` and retains `tenant_id`, `transaction_id`, `participant_id`, `site_id` for tuple integrity. Enforce:
+
+```sql
+UNIQUE (id, tenant_id, transaction_id, participant_id, site_id)
+  -- on transaction_site_links
+
+FOREIGN KEY (
+  transaction_site_link_id, tenant_id, transaction_id, participant_id, site_id
+)
+REFERENCES transaction_site_links (
+  id, tenant_id, transaction_id, participant_id, site_id
+)
+```
+
+This pins the assignment to the exact site-link record, including its historical identity, and prevents assignment to a site not linked to that participant/transaction. It does not prove that the referenced link is currently active; activation and every protected operation must validate link status and effective time. Revoke/expire a site link to deny subsequent operations; do not silently repoint existing assignment history.
+
+## 4. Mandatory composite foreign-key contract
+
+Parent candidate keys:
 
 ```sql
 transaction_participants:
   UNIQUE (tenant_id, transaction_id)
   UNIQUE (id, tenant_id, transaction_id)
+  UNIQUE (id, tenant_id, legal_party_id)
 
 supply_sites:
   UNIQUE (tenant_id, id)
-```
 
-### 4.2 Mandatory composite FKs
+transaction_site_links:
+  UNIQUE (id, tenant_id, transaction_id, participant_id, site_id)
+
+tenant_memberships:
+  UNIQUE (id, tenant_id)
+```
 
 | ID | Child | Child columns | Parent | Parent columns | Purpose |
 |---|---|---|---|---|---|
-| CFK-001 | transaction_access_assignments | `(tenant_id,transaction_id)` | transaction_participants | `(tenant_id,transaction_id)` | Assignment tenant participates in transaction |
+| CFK-001 | transaction_access_assignments | `(tenant_id,transaction_id)` | transaction_participants | `(tenant_id,transaction_id)` | Assignment tenant participates |
 | CFK-002 | transaction_access_assignments | `(tenant_id,site_id)` | supply_sites | `(tenant_id,id)` | Site belongs to same tenant |
-| CFK-003 | transaction_site_links | `(tenant_id,transaction_id)` | transaction_participants | `(tenant_id,transaction_id)` | Site link tenant participates in transaction |
+| CFK-003 | transaction_site_links | `(tenant_id,transaction_id)` | transaction_participants | `(tenant_id,transaction_id)` | Site-link tenant participates |
 | CFK-004 | transaction_site_links | `(tenant_id,site_id)` | supply_sites | `(tenant_id,id)` | Linked site belongs to same tenant |
+| CFK-005 | Every child storing participant_id | `(participant_id,tenant_id,transaction_id)` | transaction_participants | `(id,tenant_id,transaction_id)` | Exact participant tuple |
+| CFK-006 | transaction_participants | `(tenant_legal_party_binding_id,tenant_id,legal_party_id)` | tenant_legal_party_bindings | `(id,tenant_id,legal_party_id)` | Exact binding version |
+| CFK-007 | transaction_access_assignments | `(membership_id,tenant_id)` | tenant_memberships | `(id,tenant_id)` | Assignment belongs to tenant member |
+| CFK-008 | transaction_access_assignments | `(transaction_site_link_id,tenant_id,transaction_id,participant_id,site_id)` | transaction_site_links | `(id,tenant_id,transaction_id,participant_id,site_id)` | Assignment uses exact linked site |
 
-### 4.3 Participant consistency FK
+CFK-001–004 are the four original mandatory composite FKs. CFK-005–008 close participant identity, binding version, membership and exact site-link consistency.
 
-Every child storing `participant_id` must also enforce:
+## 5. Check, unique, temporal and cross-row constraints
 
-```sql
-FOREIGN KEY (participant_id, tenant_id, transaction_id)
-REFERENCES transaction_participants (id, tenant_id, transaction_id)
-```
-
-This is additional to CFK-001–CFK-004, not a substitute for them.
-
-### 4.4 Assignment-to-site-link consistency
-
-A site-owner FK alone does not prove that the assigned participant is linked to that site for that transaction. Required invariant:
-
-```text
-assignment.(tenant_id, transaction_id, participant_id, site_id)
-must match an active transaction_site_links row
-with the same tuple and effective period.
-```
-
-**Review options:** (a) introduce a composite candidate key on `transaction_site_links` and FK from assignment; or (b) enforce activation/assignment lifecycle with a serialized backend transaction and engine-specific trigger/constraint logic. Select one before freeze and test races.
-
-### 4.5 Membership-to-assignment consistency
-
-An assignment's `subject_user_id` must belong to the same `tenant_id`. Proposed candidate key on membership: `UNIQUE(tenant_id,user_id)`, referenced by assignment `(tenant_id,subject_user_id)`. If membership history permits multiple rows per user/tenant, model a stable membership identity and reference that ID plus tenant instead. Membership active/revoked state remains a runtime authorization check.
-
-## 5. Check, unique and temporal constraints
-
-| ID | Entity | Constraint | Required behavior |
+| ID | Entity | Constraint | Enforcement |
 |---|---|---|---|
-| CK-001 | legal_parties | required legal name, country code and controlled legal status | Reject invalid/missing identity data |
-| CK-002 | tenant_legal_party_bindings | valid effective interval | `effective_until IS NULL OR effective_until > effective_from` |
-| CK-003 | tenant_legal_party_bindings | verified requires verifier + evidence | Reject unsubstantiated verified binding |
-| TM-001 | tenant_legal_party_bindings | no overlapping verified/effective periods per tenant | DEC-001; temporal exclusion/serialization or trigger |
-| UQ-001 | transaction_participants | `UNIQUE(tenant_id,transaction_id)` | DEC-002 |
-| CK-004 | transaction_participants | role in controlled vocabulary | Reject unknown role |
-| CK-005 | transaction_participants | valid effective period/status | Reject invalid range/state |
-| UQ-002 | transaction_participants | one Buyer role per transaction | Partial unique index or equivalent |
-| UQ-003 | transaction_participants | one Seller role per transaction | Partial unique index or equivalent |
-| CK-006 | commercial_transactions | Buyer legal party differs from Seller legal party | Reject same legal party on both sides |
-| TR-001 | transaction_participants | Buyer/Seller legal party matches transaction role | Reject mismatched party identity |
-| TR-002 | transaction_participants | tenant binding version matches tenant + legal party | Reject stale/mismatched binding reference |
-| CK-007 | transaction_site_links | valid status, purpose and effective period | Reject unknown/invalid state |
-| CK-008 | transaction_access_assignments | operational assignment requires non-null site | NULL is not broad scope |
-| TR-003 | transaction_access_assignments | exact active site link exists for participant/site/transaction | Reject unlinked site assignment |
-| TR-004 | transaction_access_assignments | subject user belongs to assignment tenant | Reject cross-tenant/non-member subject |
-| FK-005 | assignment child | assignment/action pair references valid assignment and catalog action | No orphan/unknown action |
-| CK-009 | permission_actions | controlled code and active/deprecated lifecycle | Deprecated action cannot be newly granted |
-| AU-001 | audit_events | append-only / restricted mutation | Preserve attributable history |
+| CK-001 | legal_parties | Required legal name, country code and controlled status | CHECK + D-06 legal review |
+| CK-002 | tenant_legal_party_bindings | `effective_until IS NULL OR effective_until > effective_from` | CHECK |
+| CK-003 | tenant_legal_party_bindings | Verified requires verifier + evidence reference | CHECK |
+| TM-001 | tenant_legal_party_bindings | No overlapping verified intervals per tenant | Serialized trigger / transaction on both engines |
+| UQ-001 | transaction_participants | `UNIQUE(tenant_id,transaction_id)` | Native UNIQUE |
+| UQ-002 | transaction_participants | One Buyer role per transaction | Partial unique index |
+| UQ-003 | transaction_participants | One Seller role per transaction | Partial unique index |
+| CK-004 | transaction_participants | Role in buyer/seller/supplier | CHECK |
+| CK-005 | transaction_participants | Valid effective interval/status | CHECK + lifecycle service |
+| CK-006 | commercial_transactions | Buyer legal party differs from Seller | CHECK |
+| TR-001 | transaction_participants | Role's legal_party_id equals corresponding transaction party | Trigger or normalized transaction-party relation |
+| TR-002 | transaction_participants | Binding was verified/effective at approval timestamp | Trigger/serialized transaction + backend approval |
+| TR-003 | transaction_participants | Buyer/Seller tenant identities differ before activation | Trigger/lifecycle transaction |
+| CK-007 | transaction_site_links | Valid purpose/status/effective interval | CHECK + controlled transition |
+| CK-008 | transaction_access_assignments | Operational site link is mandatory; site_id NOT NULL | NOT NULL + CFK-008 |
+| TR-004 | transaction_access_assignments | Referenced membership is active at grant and request time | Backend authorization; optionally trigger at grant |
+| TR-005 | transaction_access_assignments | Referenced site link is active/effective at grant and request time | Backend authorization; optionally trigger at grant |
+| CK-009 | permission_actions | Canonical code and lifecycle status | CHECK/catalog governance |
+| FK-009 | assignment-action rows | Assignment/action pair exists | Composite FK / PK |
+| AU-001 | audit_events | Append-only to ordinary application roles | Privileges + controlled trigger |
 
-Check constraints validate row-local conditions. Temporal overlap, cross-table role/legal-party matching, membership lifecycle, site-link activity and approval authority require exclusion/trigger/serialized service enforcement and backend authorization.
+Row-local CHECK constraints do not replace cross-row or temporal enforcement. All trigger paths must be transactionally safe under concurrent insert/update, fail closed, and emit attributable audit events.
 
-## 6. Lifecycle and authorization invariants
+## 6. PostgreSQL–SQLite constraint mapping
 
-- Participant states: invited, pending, active, suspended, revoked, expired.
-- Assignment/site-link states: pending, active, suspended, revoked, expired.
-- Only active rows within effective periods can satisfy authorization.
-- Pending participant receives no operational access.
-- Supplier needs own tenant, verified binding, explicit participation approval and bounded site/action/time scope.
-- `site_id = NULL` never means unrestricted access.
-- Contract, payment, custody, legal, Syariah and goods-release policies remain separate gates.
-- Revocation invalidates later protected operations and offline replay; local SQLite active state is not authority.
-- Revocation does not silently transfer custody.
-
-## 7. PostgreSQL–SQLite enforcement mapping
-
-| Logical rule | PostgreSQL | SQLite | Parity requirement |
+| Rule | PostgreSQL | SQLite | Parity contract |
 |---|---|---|---|
-| PK / UNIQUE | Native PK/unique | Native PK/unique | Same duplicate rejection |
-| Composite FKs | Native composite FK | Native composite FK; enable per connection | Same tuple rejection |
-| Role/status/action vocabulary | CHECK or governed enum | CHECK | Same accepted values |
-| Effective interval validity | CHECK | CHECK | Same boundary behavior |
-| Binding overlap | Range exclusion constraint or serialized transaction | Trigger + serialized write transaction | Same overlap outcomes |
-| Role/legal-party match | Constraint trigger or normalized relation + FK | Trigger | Same role mismatch rejection |
-| Assignment/site-link consistency | Composite FK or transactionally serialized enforcement | Composite FK or trigger | Same mismatched tuple rejection |
-| Membership/assignment consistency | Composite FK + runtime active membership check | Composite FK + runtime check | Same identity tuple rejection |
-| Tenant isolation | RLS + backend authorization | Backend authorization; local DB untrusted | No local authority |
-| Audit immutability | Privilege boundary + controlled trigger | Trigger + controlled write access | Same ordinary-user mutation denial |
+| Primary/candidate keys | PK + UNIQUE | PK + UNIQUE | Same duplicate rejection |
+| CFK-001–008 | Native composite FKs | Native composite FKs; `PRAGMA foreign_keys=ON` per connection | Same tuple rejection |
+| Buyer/Seller role uniqueness | Two partial unique indexes | Same two partial unique indexes; require SQLite ≥3.8.0 | Duplicate role rejected; Supplier cardinality unchanged |
+| Binding version | Composite FK to binding candidate key | Same composite FK | Cross-tenant/legal-party mismatch rejected |
+| Membership assignment | Composite FK to membership identity | Same composite FK | Cross-tenant membership rejected |
+| Assignment/site-link | Five-column composite FK to exact link candidate key | Same composite FK | Unlinked or mismatched site assignment rejected |
+| Effective interval validity | CHECK | CHECK | Same half-open interval boundaries |
+| Binding overlap | BEFORE trigger locks tenant row (`SELECT ... FOR UPDATE`), checks overlap, then writes in same transaction | BEFORE INSERT/UPDATE trigger rejects overlap; SQLite write transaction serialization required | Concurrent overlapping binding attempts: exactly one succeeds |
+| Role/legal-party match | Trigger or normalized party relation + FK | Trigger or normalized party relation + FK | Buyer/Seller mismatch rejected |
+| Buyer/Seller distinct tenants | Transaction activation trigger/service transaction | Trigger/service transaction | Same rejection before activation |
+| Active membership/site link | Backend authorization at request time; grant-time validation | Backend authorization; local copy is provisional | Revocation/expiry denies subsequent operation |
+| Tenant isolation | RLS + backend authorization | No trusted local RLS boundary; local DB is untrusted | SQLite cannot authorize final/shared operation |
+| Audit immutability | Privilege boundary + controlled trigger | Trigger + controlled write access | Ordinary application role cannot rewrite audit history |
 | Idempotency | Unique server command/idempotency key | Unique local command key | Server deduplicates replay |
 
-SQLite must execute `PRAGMA foreign_keys = ON` for every connection. The minimum SQLite runtime version and trigger semantics must be pinned before freeze. PostgreSQL RLS is defense-in-depth and cannot replace backend authorization.
+**Interval semantics:** timestamps must use one canonical UTC representation and consistent precision across engines. Use half-open intervals `[from,until)`: `from <= now AND (until IS NULL OR now < until)`. Adjacent intervals do not overlap. SQLite must pin one timestamp representation/precision before schema freeze.
+
+**Concurrency:** PostgreSQL overlap enforcement must serialize per tenant (e.g. lock the tenant row before checking and writing). SQLite writes must use an explicit write transaction; a trigger check must run within that transaction. A non-serialized application pre-check is insufficient.
+
+**SQLite connection invariant:** `PRAGMA foreign_keys = ON` must be set and verified for every connection, including tests, workers and reopen paths. Pin actual runtime version before using partial indexes/triggers. SQLite local state is never authority for shared access or final replay.
+
+## 7. Authorization and lifecycle invariants
+
+- Only active participants, active memberships, active site links, active assignments and active action grants within their effective intervals can authorize.
+- Buyer/Seller activation/reactivation requires bilateral approval. Supplier additionally requires explicit Supplier approval and bounded operational scope.
+- A participant's binding-version reference remains immutable for historical identity.
+- Membership revocation denies all assignments through that membership without deleting audit history.
+- Site-link revocation/expiry denies dependent assignments; reassignment requires a new explicit link/assignment lifecycle, not silent tuple mutation.
+- `site_id = NULL` never means unrestricted access.
+- Supplier never gains contract signing/amendment, payment/ledger, or goods-release authority by operational assignment.
+- Contract, payment, custody, legal, Syariah and release policies remain independent gates.
+- Client-supplied tenant, membership, participant, site, role, action, status or offline timestamp is never authorization proof.
 
 ## 8. Index requirements
 
-Carry forward the source candidates for review:
+Candidate indexes (final selection requires workload/query-plan review):
 
 | ID | Table | Candidate index |
 |---|---|---|
@@ -196,39 +231,37 @@ Carry forward the source candidates for review:
 | IDX-003 | transaction_participants | `(tenant_id,participation_status,effective_from)` |
 | IDX-004 | transaction_participants | `(transaction_id,participant_role,participation_status)` |
 | IDX-005 | transaction_site_links | `(tenant_id,transaction_id,site_id,link_status)` |
-| IDX-006 | transaction_access_assignments | `(tenant_id,subject_user_id,assignment_status)` |
+| IDX-006 | transaction_access_assignments | `(tenant_id,membership_id,assignment_status)` |
 | IDX-007 | transaction_access_assignments | `(participant_id,transaction_id,site_id)` |
 | IDX-008 | audit_events | `(tenant_id,occurred_at)` |
 | IDX-009 | transaction_access_assignment_actions | `(assignment_id,action_code)` |
 
-Index coverage for all child FK columns must be checked. Final index selection depends on real query patterns and query plans.
+Add/verify indexes on child FK column tuples where the engine does not create them automatically. Do not create redundant indexes duplicating PK/UNIQUE/partial indexes without query-plan evidence.
 
-## 9. Unresolved mapping decisions before schema freeze
+## 9. Remaining decisions before schema freeze
 
-1. Approve or reject participant binding-version FK.
-2. Approve Buyer/Seller role cardinality physical enforcement.
-3. Choose declarative vs trigger/serialized assignment-to-site-link enforcement.
-4. Finalize membership identity/history and assignment membership FK.
-5. Finalize exact transaction-wide exception representation without NULL-site semantics.
-6. Finalize non-party delegated provider model (D-03).
-7. Finalize role/action allowlist and grant composition (D-05).
-8. Legal/compliance decision on jurisdiction identifiers, verification evidence and retention (D-06).
-9. Pin PostgreSQL version/extensions, SQLite minimum version, UUID representation and timestamp precision.
-10. Complete DEC-006 RLS design, DEC-007 SQLite provenance and DEC-008 parity evidence.
-11. Reconcile legacy schema/data and server authorization code against this domain baseline.
+1. Confirm exact table/column names against current canonical DDL and legacy schema.
+2. Confirm whether `tenant_memberships` has stable rows or historical duplicates; if multiple history rows, formalize stable membership identity and active-row uniqueness.
+3. Select trigger vs normalized transaction-party relation for role/legal-party match.
+4. Pin PostgreSQL version, SQLite runtime minimum/version, UUID storage, UTC timestamp precision and transaction isolation.
+5. Finalize non-party delegated provider model (D-03).
+6. Finalize role/action allowlist and grant composition (D-05).
+7. Legal/compliance review of jurisdiction identifiers, verification evidence and retention (D-06).
+8. Close DEC-006 RLS design, DEC-007 SQLite provenance and DEC-008 parity evidence.
+9. Reconcile legacy data and server authorization code against this domain baseline.
 
 ## 10. Freeze exit criteria
 
 Schema freeze is not permitted until:
-- all candidate keys and FK targets are accepted;
-- all row-level, temporal and cross-table constraints have an explicit enforcement owner per engine;
-- the same positive/negative acceptance corpus is defined for PostgreSQL and SQLite;
-- RLS policy and non-bypass role are reviewed;
-- actual SQLite runtime schema and FK enforcement are evidenced;
+- the four gap resolutions and all candidate keys/FK targets are accepted;
+- all row-local, temporal and cross-table constraints have an explicit enforcement owner per engine;
+- the same positive/negative acceptance corpus passes on disposable PostgreSQL and SQLite databases;
+- RLS policies and non-bypass role are reviewed and tested;
+- actual SQLite runtime/schema and per-connection FK enforcement are evidenced;
 - legacy data disposition and migration/rollback plan are reviewed;
-- cross-platform API and authorization contracts match the canonical schema;
-- every critical open decision has an explicit owner and disposition.
+- Web, Mobile and Desktop API/authorization contracts match the canonical schema;
+- all critical open decisions have an explicit owner and disposition.
 
 ## 11. Governance
 
-This mapping is a review baseline, not final DDL. No schema freeze, source implementation, migration creation/execution, database mutation, shared/live testing, PR creation, merge, deployment or staging/production activity is authorized.
+This mapping is a review-ready logical specification, not final DDL. No schema freeze, source implementation, migration creation/execution, database mutation, shared/live testing, PR, merge, deployment or staging/production activity is authorized.
