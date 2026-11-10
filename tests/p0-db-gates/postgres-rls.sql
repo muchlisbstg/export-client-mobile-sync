@@ -43,8 +43,10 @@ GRANT EXECUTE ON FUNCTION app_tenant(),app_user() TO app_api;
 
 INSERT INTO tenants VALUES ('tenant-a'),('tenant-b'),('tenant-s');
 INSERT INTO tenant_memberships VALUES ('member-a','tenant-a','user-a','active'),('member-b','tenant-b','user-b','active'),('member-s','tenant-s','user-s','active'),('member-revoked','tenant-a','user-old','revoked');
-INSERT INTO commercial_transactions VALUES ('tx-1','party-a','party-b');
-INSERT INTO transaction_participants VALUES ('part-a','tenant-a','tx-1','buyer','active'),('part-b','tenant-b','tx-1','seller','active'),('part-s','tenant-s','tx-1','supplier','active'),('part-pending','tenant-a','tx-1','buyer','pending');
+INSERT INTO commercial_transactions VALUES ('tx-1','party-a','party-b'),('tx-2','party-c','party-d');
+-- DEC-001: exactly one participant per (tenant_id, transaction_id), including pending participants.
+-- Keep the pending-state visibility fixture on a separate transaction rather than weakening the unique key.
+INSERT INTO transaction_participants VALUES ('part-a','tenant-a','tx-1','buyer','active'),('part-b','tenant-b','tx-1','seller','active'),('part-s','tenant-s','tx-1','supplier','active'),('part-pending','tenant-a','tx-2','buyer','pending');
 INSERT INTO supply_sites VALUES ('site-a','tenant-a'),('site-b','tenant-b'),('site-s','tenant-s');
 INSERT INTO transaction_site_links VALUES ('link-a','tenant-a','tx-1','part-a','site-a','active'),('link-s','tenant-s','tx-1','part-s','site-s','active');
 INSERT INTO transaction_access_assignments VALUES ('assign-a','tenant-a','tx-1','part-a','site-a','link-a','member-a','active'),('assign-s','tenant-s','tx-1','part-s','site-s','link-s','member-s','active');
