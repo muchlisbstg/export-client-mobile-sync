@@ -120,29 +120,29 @@ await compare('PAR-012 same tenant cannot hold Buyer and Seller participant rows
 await reset();
 await compareBoolean('PAR-013 revoked membership denies assignment authorization',async()=>{
   await pgExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
-  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
+  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
   return r.rows[0].allowed;
 },()=>{
   sqExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
-  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
+  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
 });
 await reset();
 await compareBoolean('PAR-014 revoked site link denies assignment authorization',async()=>{
   await pgExec("UPDATE transaction_site_links SET status='revoked' WHERE id='link-a'");
-  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
+  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
   return r.rows[0].allowed;
 },()=>{
   sqExec("UPDATE transaction_site_links SET status='revoked' WHERE id='link-a'");
-  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
+  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
 });
 await reset();
 await compareBoolean('PAR-015 revoked offline command cannot be replayed',async()=>{
   await pgExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
-  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id AND a.status='active' WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed");
+  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed");
   return r.rows[0].replay_allowed;
 },()=>{
   sqExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
-  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id AND a.status='active' WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed").get().replay_allowed;
+  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed").get().replay_allowed;
 });
 
 const versions={postgres:(await pgClient.query('SHOW server_version')).rows[0].server_version,sqlite:sqlite.prepare('SELECT sqlite_version() AS version').get().version};
