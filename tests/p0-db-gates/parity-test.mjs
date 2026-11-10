@@ -20,7 +20,10 @@ const pgDdl=[
 `CREATE TEMP TABLE transaction_access_assignments(id text PRIMARY KEY,tenant_id text NOT NULL,transaction_id text NOT NULL,participant_id text NOT NULL,site_id text NOT NULL,site_link_id text NOT NULL,membership_id text NOT NULL,FOREIGN KEY(participant_id,tenant_id,transaction_id) REFERENCES transaction_participants(id,tenant_id,transaction_id),FOREIGN KEY(site_id,tenant_id) REFERENCES supply_sites(id,tenant_id),FOREIGN KEY(site_link_id,tenant_id,transaction_id,participant_id,site_id) REFERENCES transaction_site_links(id,tenant_id,transaction_id,participant_id,site_id),FOREIGN KEY(membership_id,tenant_id) REFERENCES tenant_memberships(id,tenant_id))`,
 `CREATE TEMP TABLE audit_events(id text PRIMARY KEY,tenant_id text NOT NULL REFERENCES tenants(id),event_type text NOT NULL)`,
 `CREATE FUNCTION pg_temp.reject_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit_immutable'; END $$`,
-`CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_audit_mutation()`
+`CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_audit_mutation()`,
+`CREATE FUNCTION pg_temp.enforce_participant_party_match() RETURNS trigger LANGUAGE plpgsql AS $ DECLARE buyer text; seller text; BEGIN SELECT buyer_party_id,seller_party_id INTO buyer,seller FROM commercial_transactions WHERE id=NEW.transaction_id; IF NEW.role='buyer' AND NEW.legal_party_id<>buyer THEN RAISE EXCEPTION 'buyer_party_mismatch'; END IF; IF NEW.role='seller' AND NEW.legal_party_id<>seller THEN RAISE EXCEPTION 'seller_party_mismatch'; END IF; RETURN NEW; END $`,
+`CREATE TRIGGER participant_party_match BEFORE INSERT OR UPDATE ON transaction_participants FOR EACH ROW EXECUTE FUNCTION pg_temp.enforce_participant_party_match()`,
+`CREATE TEMP TABLE offline_commands(id text PRIMARY KEY,membership_id text NOT NULL REFERENCES tenant_memberships(id),assignment_id text NOT NULL REFERENCES transaction_access_assignments(id),command text NOT NULL,status text NOT NULL)`
 ];
 const sqliteDdl=[
 `CREATE TABLE tenants(id text PRIMARY KEY)`,
@@ -35,16 +38,19 @@ const sqliteDdl=[
 `CREATE TABLE transaction_access_assignments(id text PRIMARY KEY,tenant_id text NOT NULL,transaction_id text NOT NULL,participant_id text NOT NULL,site_id text NOT NULL,site_link_id text NOT NULL,membership_id text NOT NULL,FOREIGN KEY(participant_id,tenant_id,transaction_id) REFERENCES transaction_participants(id,tenant_id,transaction_id),FOREIGN KEY(site_id,tenant_id) REFERENCES supply_sites(id,tenant_id),FOREIGN KEY(site_link_id,tenant_id,transaction_id,participant_id,site_id) REFERENCES transaction_site_links(id,tenant_id,transaction_id,participant_id,site_id),FOREIGN KEY(membership_id,tenant_id) REFERENCES tenant_memberships(id,tenant_id))`,
 `CREATE TABLE audit_events(id text PRIMARY KEY,tenant_id text NOT NULL REFERENCES tenants(id),event_type text NOT NULL)`,
 `CREATE TRIGGER audit_immutable_update BEFORE UPDATE ON audit_events BEGIN SELECT RAISE(ABORT,'audit_immutable'); END`,
-`CREATE TRIGGER audit_immutable_delete BEFORE DELETE ON audit_events BEGIN SELECT RAISE(ABORT,'audit_immutable'); END`
+`CREATE TRIGGER audit_immutable_delete BEFORE DELETE ON audit_events BEGIN SELECT RAISE(ABORT,'audit_immutable'); END`,
+`CREATE TRIGGER participant_party_match_insert BEFORE INSERT ON transaction_participants WHEN (NEW.role='buyer' AND NEW.legal_party_id<>(SELECT buyer_party_id FROM commercial_transactions WHERE id=NEW.transaction_id)) OR (NEW.role='seller' AND NEW.legal_party_id<>(SELECT seller_party_id FROM commercial_transactions WHERE id=NEW.transaction_id)) BEGIN SELECT RAISE(ABORT,'participant_party_mismatch'); END`,
+`CREATE TRIGGER participant_party_match_update BEFORE UPDATE ON transaction_participants WHEN (NEW.role='buyer' AND NEW.legal_party_id<>(SELECT buyer_party_id FROM commercial_transactions WHERE id=NEW.transaction_id)) OR (NEW.role='seller' AND NEW.legal_party_id<>(SELECT seller_party_id FROM commercial_transactions WHERE id=NEW.transaction_id)) BEGIN SELECT RAISE(ABORT,'participant_party_mismatch'); END`,
+`CREATE TABLE offline_commands(id text PRIMARY KEY,membership_id text NOT NULL REFERENCES tenant_memberships(id),assignment_id text NOT NULL REFERENCES transaction_access_assignments(id),command text NOT NULL,status text NOT NULL)`
 ];
 for(const q of pgDdl) await pgClient.query(q);
 for(const q of sqliteDdl) sqlite.exec(q);
 const pgExec=(q,p=[])=>pgClient.query(q,p);
 const sqExec=(q,p=[])=>sqlite.prepare(q).run(...p);
 async function reset(){
-  await pgExec('DROP TRIGGER IF EXISTS audit_immutable ON audit_events'); await pgExec('DELETE FROM audit_events'); await pgExec('CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_audit_mutation()'); await pgExec('DELETE FROM transaction_access_assignments'); await pgExec('DELETE FROM transaction_site_links'); await pgExec('DELETE FROM tenant_memberships'); await pgExec('DELETE FROM supply_sites'); await pgExec('DELETE FROM transaction_participants'); await pgExec('DELETE FROM commercial_transactions'); await pgExec('DELETE FROM tenant_legal_party_bindings'); await pgExec('DELETE FROM legal_parties'); await pgExec('DELETE FROM tenants');
+  await pgExec('DROP TRIGGER IF EXISTS audit_immutable ON audit_events'); await pgExec('DELETE FROM offline_commands'); await pgExec('DELETE FROM audit_events'); await pgExec('CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_audit_mutation()'); await pgExec('DELETE FROM transaction_access_assignments'); await pgExec('DELETE FROM transaction_site_links'); await pgExec('DELETE FROM tenant_memberships'); await pgExec('DELETE FROM supply_sites'); await pgExec('DELETE FROM transaction_participants'); await pgExec('DELETE FROM commercial_transactions'); await pgExec('DELETE FROM tenant_legal_party_bindings'); await pgExec('DELETE FROM legal_parties'); await pgExec('DELETE FROM tenants');
   sqlite.exec('DROP TRIGGER IF EXISTS audit_immutable_update'); sqlite.exec('DROP TRIGGER IF EXISTS audit_immutable_delete');
-  for(const t of ['audit_events','transaction_access_assignments','transaction_site_links','tenant_memberships','supply_sites','transaction_participants','commercial_transactions','tenant_legal_party_bindings','legal_parties','tenants']) sqlite.exec('DELETE FROM '+t);
+  for(const t of ['offline_commands','audit_events','transaction_access_assignments','transaction_site_links','tenant_memberships','supply_sites','transaction_participants','commercial_transactions','tenant_legal_party_bindings','legal_parties','tenants']) sqlite.exec('DELETE FROM '+t);
   sqlite.exec("CREATE TRIGGER audit_immutable_update BEFORE UPDATE ON audit_events BEGIN SELECT RAISE(ABORT,'audit_immutable'); END"); sqlite.exec("CREATE TRIGGER audit_immutable_delete BEFORE DELETE ON audit_events BEGIN SELECT RAISE(ABORT,'audit_immutable'); END");
   for(const [id] of [['tenant-a'],['tenant-b'],['tenant-s1'],['tenant-s2']]) {await pgExec('INSERT INTO tenants VALUES($1)',[id]);sqExec('INSERT INTO tenants VALUES(?)',[id]);}
   for(const id of ['party-a','party-b','party-s1','party-s2']) {await pgExec('INSERT INTO legal_parties VALUES($1)',[id]);sqExec('INSERT INTO legal_parties VALUES(?)',[id]);}
@@ -59,6 +65,7 @@ async function reset(){
   for(const [id,t,p,s] of links){await pgExec('INSERT INTO transaction_site_links VALUES($1,$2,$3,$4,$5,$6)',[id,t,'tx-1',p,s,'active']);sqExec('INSERT INTO transaction_site_links VALUES(?,?,?,?,?,?)',[id,t,'tx-1',p,s,'active']);}
   await pgExec('INSERT INTO transaction_access_assignments VALUES($1,$2,$3,$4,$5,$6,$7)',['assign-a','tenant-a','tx-1','part-a','site-a','link-a','mem-a']);sqExec('INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)',['assign-a','tenant-a','tx-1','part-a','site-a','link-a','mem-a']);
   await pgExec('INSERT INTO audit_events VALUES($1,$2,$3)',['audit-a','tenant-a','created']);sqExec('INSERT INTO audit_events VALUES(?,?,?)',['audit-a','tenant-a','created']);
+  await pgExec('INSERT INTO offline_commands VALUES($1,$2,$3,$4,$5)',['offline-a','mem-a','assign-a','lot.receive','pending']);sqExec('INSERT INTO offline_commands VALUES(?,?,?,?,?)',['offline-a','mem-a','assign-a','lot.receive','pending']);
 }
 await reset();
 const outcomes=[];
@@ -67,6 +74,13 @@ async function compare(id,expectReject,pgFn,sqliteFn){
   try{await pgFn();}catch{p='rejected';}
   try{sqliteFn();}catch{s='rejected';}
   const ok=p===s && (expectReject?p==='rejected':p==='accepted');
+  outcomes.push({id,postgres:p,sqlite:s,status:ok?'PASS':'FAIL'});
+}
+async function compareBoolean(id,pgFn,sqliteFn,expected=false){
+  let p,s;
+  try{p=Boolean(await pgFn());}catch{p='error';}
+  try{s=Boolean(sqliteFn());}catch{s='error';}
+  const ok=p===s && p===expected;
   outcomes.push({id,postgres:p,sqlite:s,status:ok?'PASS':'FAIL'});
 }
 await compare('PAR-001 duplicate tenant/transaction participant',true,()=>pgExec("INSERT INTO transaction_participants VALUES('dup','tenant-a','tx-1','party-a','bind-a','supplier','active')"),()=>sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup','tenant-a','tx-1','party-a','bind-a','supplier','active']));
@@ -88,8 +102,51 @@ await reset();
 await compare('PAR-009 audit history immutable',true,()=>pgExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"),()=>sqExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"));
 await reset();
 await compare('PAR-010 failed multi-step transaction rolls back',false,async()=>{await pgExec('BEGIN');try{await pgExec("INSERT INTO commercial_transactions VALUES('tx-rollback','party-a','party-b')");await pgExec("INSERT INTO transaction_participants VALUES('bad','tenant-a','missing-tx','party-a','bind-a','supplier','active')");}catch{}finally{await pgExec('ROLLBACK');}const r=await pgExec("SELECT id FROM commercial_transactions WHERE id='tx-rollback'");assert.equal(r.rowCount,0);},()=>{const tx=sqlite.transaction(()=>{sqExec("INSERT INTO commercial_transactions VALUES('tx-rollback','party-a','party-b')");sqExec("INSERT INTO transaction_participants VALUES('bad','tenant-a','missing-tx','party-a','bind-a','supplier','active')");});try{tx();}catch{}assert.equal(sqlite.prepare("SELECT id FROM commercial_transactions WHERE id='tx-rollback'").all().length,0);});
+
+await reset();
+await compare('PAR-011 Buyer/Seller participant legal-party must match transaction party',true,
+  ()=>pgExec("INSERT INTO transaction_participants VALUES('bad-party','tenant-a','tx-1','party-b','bind-a','buyer','active')"),
+  ()=>sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['bad-party','tenant-a','tx-1','party-b','bind-a','buyer','active']));
+await reset();
+await compare('PAR-012 same tenant cannot hold Buyer and Seller participant rows for one transaction',true,async()=>{
+  await pgExec("INSERT INTO commercial_transactions VALUES('tx-same-tenant','party-a','party-b')");
+  await pgExec("INSERT INTO transaction_participants VALUES('same-buyer','tenant-a','tx-same-tenant','party-a','bind-a','buyer','active')");
+  await pgExec("INSERT INTO transaction_participants VALUES('same-seller','tenant-a','tx-same-tenant','party-b','bind-a','seller','active')");
+},()=>{
+  sqExec("INSERT INTO commercial_transactions VALUES(?,?,?)",['tx-same-tenant','party-a','party-b']);
+  sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['same-buyer','tenant-a','tx-same-tenant','party-a','bind-a','buyer','active']);
+  sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['same-seller','tenant-a','tx-same-tenant','party-b','bind-a','seller','active']);
+});
+await reset();
+await compareBoolean('PAR-013 revoked membership denies assignment authorization',async()=>{
+  await pgExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
+  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
+  return r.rows[0].allowed;
+},()=>{
+  sqExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
+  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
+});
+await reset();
+await compareBoolean('PAR-014 revoked site link denies assignment authorization',async()=>{
+  await pgExec("UPDATE transaction_site_links SET status='revoked' WHERE id='link-a'");
+  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
+  return r.rows[0].allowed;
+},()=>{
+  sqExec("UPDATE transaction_site_links SET status='revoked' WHERE id='link-a'");
+  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND a.status='active' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
+});
+await reset();
+await compareBoolean('PAR-015 revoked offline command cannot be replayed',async()=>{
+  await pgExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
+  const r=await pgExec("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id AND a.status='active' WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed");
+  return r.rows[0].replay_allowed;
+},()=>{
+  sqExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
+  return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id AND a.status='active' WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed").get().replay_allowed;
+});
+
 const versions={postgres:(await pgClient.query('SHOW server_version')).rows[0].server_version,sqlite:sqlite.prepare('SELECT sqlite_version() AS version').get().version};
 await pgClient.end(); sqlite.close();
 const schemaFingerprint=createHash('sha256').update([...pgDdl,...sqliteDdl].join('\\n')).digest('hex');
-console.log(JSON.stringify({suite:'DEC-008 PostgreSQL/SQLite disposable parity subset',versions,schemaFingerprint,results:outcomes,passed:outcomes.filter(x=>x.status==='PASS').length,failed:outcomes.filter(x=>x.status==='FAIL').length,scope_note:'This executable subset does not yet cover temporal concurrent writes, lifecycle/offline replay, complete approval semantics or RLS. No full DEC-008 pass is implied.'},null,2));
+console.log(JSON.stringify({suite:'DEC-008 PostgreSQL/SQLite disposable parity subset',versions,schemaFingerprint,results:outcomes,passed:outcomes.filter(x=>x.status==='PASS').length,failed:outcomes.filter(x=>x.status==='FAIL').length,scope_note:'This suite covers PAR-001 through PAR-015 except PAR-016 temporal concurrency, which is executed by temporal-concurrency-test.mjs. It is still a synthetic subset, not the complete canonical production schema.'},null,2));
 if(outcomes.some(x=>x.status!=='PASS')) process.exitCode=1;
