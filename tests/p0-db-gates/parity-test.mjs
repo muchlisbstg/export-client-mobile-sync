@@ -83,13 +83,13 @@ await compare('PAR-006 invalid effective interval',true,()=>pgExec("INSERT INTO 
 await reset();
 await compare('PAR-007 Buyer/Seller legal party must differ',true,()=>pgExec("INSERT INTO commercial_transactions VALUES('tx-bad','party-a','party-a')"),()=>sqExec("INSERT INTO commercial_transactions VALUES(?,?,?)",['tx-bad','party-a','party-a']));
 await reset();
-await compare('PAR-008 multiple independent Supplier tenants allowed',false,()=>pgExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'"),()=>sqExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'"));
+await compare('PAR-008 multiple independent Supplier tenants allowed',false,async()=>{const r=await pgExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.rows[0].count),2);},()=>{const r=sqExec("SELECT count(*) AS count FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.count),2);});
 await reset();
 await compare('PAR-009 audit history immutable',true,()=>pgExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"),()=>sqExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"));
 await reset();
 await compare('PAR-010 failed multi-step transaction rolls back',false,async()=>{await pgExec('BEGIN');try{await pgExec("INSERT INTO commercial_transactions VALUES('tx-rollback','party-a','party-b')");await pgExec("INSERT INTO transaction_participants VALUES('bad','tenant-a','missing-tx','party-a','bind-a','supplier','active')");}catch{}finally{await pgExec('ROLLBACK');}const r=await pgExec("SELECT id FROM commercial_transactions WHERE id='tx-rollback'");assert.equal(r.rowCount,0);},()=>{const tx=sqlite.transaction(()=>{sqExec("INSERT INTO commercial_transactions VALUES('tx-rollback','party-a','party-b')");sqExec("INSERT INTO transaction_participants VALUES('bad','tenant-a','missing-tx','party-a','bind-a','supplier','active')");});try{tx();}catch{}assert.equal(sqlite.prepare("SELECT id FROM commercial_transactions WHERE id='tx-rollback'").all().length,0);});
-await pgClient.end(); sqlite.close();
 const versions={postgres:(await pgClient.query('SHOW server_version')).rows[0].server_version,sqlite:sqlite.prepare('SELECT sqlite_version() AS version').get().version};
+await pgClient.end(); sqlite.close();
 const schemaFingerprint=createHash('sha256').update([...pgDdl,...sqliteDdl].join('\\n')).digest('hex');
 console.log(JSON.stringify({suite:'DEC-008 PostgreSQL/SQLite disposable parity subset',versions,schemaFingerprint,results:outcomes,passed:outcomes.filter(x=>x.status==='PASS').length,failed:outcomes.filter(x=>x.status==='FAIL').length,scope_note:'This executable subset does not yet cover temporal concurrent writes, lifecycle/offline replay, complete approval semantics or RLS. No full DEC-008 pass is implied.'},null,2));
 if(outcomes.some(x=>x.status!=='PASS')) process.exitCode=1;
