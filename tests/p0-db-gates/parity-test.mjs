@@ -95,13 +95,13 @@ await compare('PAR-003 site link cross-tenant site tuple',true,()=>pgExec("INSER
 await reset();
 await compare('PAR-001 duplicate tenant/transaction participant',true,()=>pgExec("INSERT INTO transaction_participants VALUES('dup','tenant-a','tx-1','party-a','bind-a','supplier','active')"),()=>sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup','tenant-a','tx-1','party-a','bind-a','supplier','active']));
 await reset();
-await compare('PAR-002 binding tenant/legal-party composite FK',true,()=>pgExec("INSERT INTO transaction_participants VALUES('bad-bind','tenant-a','tx-1','party-b','bind-b','supplier','active')"),()=>sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['bad-bind','tenant-a','tx-1','party-b','bind-b','supplier','active']));
+await compare('PAR-005 binding version tenant/legal-party mismatch',true,()=>pgExec("INSERT INTO transaction_participants VALUES('bad-bind','tenant-a','tx-1','party-b','bind-b','supplier','active')"),()=>sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['bad-bind','tenant-a','tx-1','party-b','bind-b','supplier','active']));
 await reset();
-await compare('PAR-003 cross-tenant membership assignment',true,()=>pgExec("INSERT INTO transaction_access_assignments VALUES('bad-member','tenant-a','tx-1','part-a','site-a','link-a','mem-b')"),()=>sqExec("INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)",['bad-member','tenant-a','tx-1','part-a','site-a','link-a','mem-b']));
+await compare('PAR-006 assignment cross-tenant membership',true,()=>pgExec("INSERT INTO transaction_access_assignments VALUES('bad-member','tenant-a','tx-1','part-a','site-a','link-a','mem-b')"),()=>sqExec("INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)",['bad-member','tenant-a','tx-1','part-a','site-a','link-a','mem-b']));
 await reset();
-await compare('PAR-004 mismatched exact site-link tuple',true,()=>pgExec("INSERT INTO transaction_access_assignments VALUES('bad-link','tenant-a','tx-1','part-a','site-a','link-s1','mem-a')"),()=>sqExec("INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)",['bad-link','tenant-a','tx-1','part-a','site-a','link-s1','mem-a']));
+await compare('PAR-007 assignment references different/unlinked site link',true,()=>pgExec("INSERT INTO transaction_access_assignments VALUES('bad-link','tenant-a','tx-1','part-a','site-a','link-s1','mem-a')"),()=>sqExec("INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)",['bad-link','tenant-a','tx-1','part-a','site-a','link-s1','mem-a']));
 await reset();
-await compare('PAR-005 duplicate Buyer role across independent tenant',true,async()=>{await pgExec("INSERT INTO tenants VALUES('tenant-extra')");await pgExec("INSERT INTO legal_parties VALUES('party-extra')");await pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");await pgExec("INSERT INTO transaction_participants VALUES('dup-buyer','tenant-extra','tx-1','party-extra','bind-extra','buyer','active')");},()=>{sqExec("INSERT INTO tenants VALUES('tenant-extra')");sqExec("INSERT INTO legal_parties VALUES('party-extra')");sqExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup-buyer','tenant-extra','tx-1','party-extra','bind-extra','buyer','active']);});
+await compare('PAR-004 duplicate Buyer partial unique role',true,async()=>{await pgExec("INSERT INTO tenants VALUES('tenant-extra')");await pgExec("INSERT INTO legal_parties VALUES('party-extra')");await pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");await pgExec("INSERT INTO transaction_participants VALUES('dup-buyer','tenant-extra','tx-1','party-extra','bind-extra','buyer','active')");},()=>{sqExec("INSERT INTO tenants VALUES('tenant-extra')");sqExec("INSERT INTO legal_parties VALUES('party-extra')");sqExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup-buyer','tenant-extra','tx-1','party-extra','bind-extra','buyer','active']);});
 await reset();
 await compare('PAR-004B duplicate Seller partial unique role',true,async()=>{
   await pgExec("INSERT INTO tenants VALUES('tenant-extra')");
@@ -115,7 +115,7 @@ await compare('PAR-004B duplicate Seller partial unique role',true,async()=>{
   sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup-seller','tenant-extra','tx-1','party-extra','bind-extra','seller','active']);
 });
 await reset();
-await compare('PAR-006 invalid effective interval',true,()=>pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bad-interval','tenant-s1','party-s1','2026-02-01','2026-01-01',2)"),()=>sqExec("INSERT INTO tenant_legal_party_bindings VALUES(?,?,?,?,?,?)",['bad-interval','tenant-s1','party-s1','2026-02-01','2026-01-01',2]));
+await compare('PAR-009 invalid effective period',true,()=>pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bad-interval','tenant-s1','party-s1','2026-02-01','2026-01-01',2)"),()=>sqExec("INSERT INTO tenant_legal_party_bindings VALUES(?,?,?,?,?,?)",['bad-interval','tenant-s1','party-s1','2026-02-01','2026-01-01',2]));
 await reset();
 await compare('PAR-008 invalid status/action vocabulary rejected',true,async()=>{await pgExec("INSERT INTO transaction_participants VALUES('bad-status','tenant-a','tx-1','party-a','bind-a','supplier','unknown')");await pgExec("INSERT INTO transaction_access_assignment_actions VALUES('assign-a','unknown.action')");},()=>{sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['bad-status','tenant-a','tx-1','party-a','bind-a','supplier','unknown']);sqExec("INSERT INTO transaction_access_assignment_actions VALUES(?,?)",['assign-a','unknown.action']);});
 await reset();
@@ -123,11 +123,11 @@ await compare('PAR-008B unknown permission action vocabulary rejected',true,
   ()=>pgExec("INSERT INTO transaction_access_assignment_actions VALUES('assign-a','unknown.action')"),
   ()=>sqExec("INSERT INTO transaction_access_assignment_actions VALUES(?,?)",['assign-a','unknown.action']));
 await reset();
-await compare('PAR-007 Buyer/Seller legal party must differ',true,()=>pgExec("INSERT INTO commercial_transactions VALUES('tx-bad','party-a','party-a')"),()=>sqExec("INSERT INTO commercial_transactions VALUES(?,?,?)",['tx-bad','party-a','party-a']));
+await compare('DOMAIN-002 Buyer/Seller transaction-root parties differ',true,()=>pgExec("INSERT INTO commercial_transactions VALUES('tx-bad','party-a','party-a')"),()=>sqExec("INSERT INTO commercial_transactions VALUES(?,?,?)",['tx-bad','party-a','party-a']));
 await reset();
-await compare('PAR-008 multiple independent Supplier tenants allowed',false,async()=>{const r=await pgExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.rows[0].count),2);},()=>{const r=sqlite.prepare("SELECT count(*) AS count FROM transaction_participants WHERE role='supplier'").get();assert.equal(Number(r.count),2);});
+await compare('DOMAIN-001 multiple independent Supplier tenants allowed',false,async()=>{const r=await pgExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.rows[0].count),2);},()=>{const r=sqlite.prepare("SELECT count(*) AS count FROM transaction_participants WHERE role='supplier'").get();assert.equal(Number(r.count),2);});
 await reset();
-await compare('PAR-009 audit history immutable',true,()=>pgExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"),()=>sqExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"));
+await compare('PAR-015 audit history mutation by ordinary app role',true,()=>pgExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"),()=>sqExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"));
 await reset();
 await compare('PAR-016 failed multi-step transaction rolls back',false,async()=>{await pgExec('BEGIN');try{await pgExec("INSERT INTO commercial_transactions VALUES('tx-rollback','party-a','party-b')");await pgExec("INSERT INTO transaction_participants VALUES('bad','tenant-a','missing-tx','party-a','bind-a','supplier','active')");}catch{}finally{await pgExec('ROLLBACK');}const r=await pgExec("SELECT id FROM commercial_transactions WHERE id='tx-rollback'");assert.equal(r.rowCount,0);},()=>{const tx=sqlite.transaction(()=>{sqExec("INSERT INTO commercial_transactions VALUES('tx-rollback','party-a','party-b')");sqExec("INSERT INTO transaction_participants VALUES('bad','tenant-a','missing-tx','party-a','bind-a','supplier','active')");});try{tx();}catch{}assert.equal(sqlite.prepare("SELECT id FROM commercial_transactions WHERE id='tx-rollback'").all().length,0);});
 
@@ -155,7 +155,7 @@ await compareBoolean('PAR-013 revoked membership denies assignment authorization
   return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
 });
 await reset();
-await compareBoolean('PAR-014 revoked site link denies assignment authorization',async()=>{
+await compareBoolean('PAR-013B revoked site link denies assignment authorization',async()=>{
   await pgExec("UPDATE transaction_site_links SET status='revoked' WHERE id='link-a'");
   const r=await pgExec("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed");
   return r.rows[0].allowed;
@@ -164,7 +164,7 @@ await compareBoolean('PAR-014 revoked site link denies assignment authorization'
   return sqlite.prepare("SELECT EXISTS(SELECT 1 FROM transaction_access_assignments a JOIN tenant_memberships m ON m.id=a.membership_id AND m.tenant_id=a.tenant_id JOIN transaction_participants p ON p.id=a.participant_id AND p.tenant_id=a.tenant_id AND p.transaction_id=a.transaction_id JOIN transaction_site_links l ON l.id=a.site_link_id AND l.tenant_id=a.tenant_id AND l.transaction_id=a.transaction_id AND l.participant_id=a.participant_id AND l.site_id=a.site_id WHERE a.id='assign-a' AND m.status='active' AND p.status='active' AND l.status='active') AS allowed").get().allowed;
 });
 await reset();
-await compareBoolean('PAR-015 revoked offline command cannot be replayed',async()=>{
+await compareBoolean('PAR-014 revoked offline event replay',async()=>{
   await pgExec("UPDATE tenant_memberships SET status='revoked' WHERE id='mem-a'");
   const r=await pgExec("SELECT EXISTS(SELECT 1 FROM offline_commands c JOIN tenant_memberships m ON m.id=c.membership_id AND m.status='active' JOIN transaction_access_assignments a ON a.id=c.assignment_id WHERE c.id='offline-a' AND c.status='pending') AS replay_allowed");
   return r.rows[0].replay_allowed;
