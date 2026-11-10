@@ -89,6 +89,26 @@ async function compareBoolean(id,pgFn,sqliteFn,expected=false){
   const ok=p===s && p===expected;
   outcomes.push({id,postgres:p,sqlite:s,status:ok?'PASS':'FAIL'});
 }
+await compare('KEY-001 duplicate participant primary key rejected',true,
+  ()=>pgExec("INSERT INTO transaction_participants VALUES('part-a','tenant-s1','tx-1','party-s1','bind-s1','supplier','active')"),
+  ()=>sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['part-a','tenant-s1','tx-1','party-s1','bind-s1','supplier','active']));
+await reset();
+await compare('KEY-004 exact tenant/site composite key rejects duplicate tuple',true,
+  ()=>pgExec("INSERT INTO supply_sites VALUES('site-a','tenant-a')"),
+  ()=>sqExec("INSERT INTO supply_sites VALUES(?,?)",['site-a','tenant-a']));
+await reset();
+await compare('KEY-004 same site identifier is independent across tenants',false,
+  ()=>pgExec("INSERT INTO supply_sites VALUES('site-a','tenant-s1')"),
+  ()=>sqExec("INSERT INTO supply_sites VALUES(?,?)",['site-a','tenant-s1']));
+await reset();
+await compare('KEY-006 site link requires exact participant tenant/transaction tuple',true,
+  ()=>pgExec("INSERT INTO transaction_site_links VALUES('bad-participant-link','tenant-a','tx-1','part-b','site-a','active')"),
+  ()=>sqExec("INSERT INTO transaction_site_links VALUES(?,?,?,?,?,?)",['bad-participant-link','tenant-a','tx-1','part-b','site-a','active']));
+await reset();
+await compare('KEY-007 assignment requires same-tenant site tuple',true,
+  ()=>pgExec("INSERT INTO transaction_access_assignments VALUES('bad-assignment-site','tenant-a','tx-1','part-a','site-b','link-a','mem-a')"),
+  ()=>sqExec("INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)",['bad-assignment-site','tenant-a','tx-1','part-a','site-b','link-a','mem-a']));
+await reset();
 await compare('PAR-002 assignment cross-tenant participant tuple',true,()=>pgExec("INSERT INTO transaction_access_assignments VALUES('bad-participant','tenant-a','tx-1','part-b','site-a','link-a','mem-a')"),()=>sqExec("INSERT INTO transaction_access_assignments VALUES(?,?,?,?,?,?,?)",['bad-participant','tenant-a','tx-1','part-b','site-a','link-a','mem-a']));
 await reset();
 await compare('PAR-003 site link cross-tenant site tuple',true,()=>pgExec("INSERT INTO transaction_site_links VALUES('bad-site-link','tenant-a','tx-1','part-a','site-s1','active')"),()=>sqExec("INSERT INTO transaction_site_links VALUES(?,?,?,?,?,?)",['bad-site-link','tenant-a','tx-1','part-a','site-s1','active']));
@@ -176,5 +196,5 @@ await compareBoolean('PAR-014 revoked offline event replay',async()=>{
 const versions={postgres:(await pgClient.query('SHOW server_version')).rows[0].server_version,sqlite:sqlite.prepare('SELECT sqlite_version() AS version').get().version};
 await pgClient.end(); sqlite.close();
 const schemaFingerprint=createHash('sha256').update([...pgDdl,...sqliteDdl].join('\\n')).digest('hex');
-console.log(JSON.stringify({suite:'DEC-008 PostgreSQL/SQLite disposable parity subset',versions,schemaFingerprint,results:outcomes,passed:outcomes.filter(x=>x.status==='PASS').length,failed:outcomes.filter(x=>x.status==='FAIL').length,scope_note:'This suite covers PAR-001 through PAR-009 and PAR-011 through PAR-016 are relational/authorization fixtures. PAR-010 concurrency and PAR-017 through PAR-019 temporal edge cases run in temporal-concurrency-test.mjs. Synthetic schema only; canonical production schema and full AUTH-001–015 remain open.'},null,2));
+console.log(JSON.stringify({suite:'DEC-008 PostgreSQL/SQLite disposable parity subset',versions,schemaFingerprint,results:outcomes,passed:outcomes.filter(x=>x.status==='PASS').length,failed:outcomes.filter(x=>x.status==='FAIL').length,scope_note:'This suite exercises a synthetic relational/authorization subset with direct KEY-001, KEY-004, KEY-006 and KEY-007 cases. PAR-010 concurrency and PAR-017 through PAR-019 temporal cases run in temporal-concurrency-test.mjs. It does not represent the complete canonical production schema or full AUTH-001–015 acceptance matrix.'},null,2));
 if(outcomes.some(x=>x.status!=='PASS')) process.exitCode=1;
