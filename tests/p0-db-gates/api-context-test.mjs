@@ -24,7 +24,7 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "4kb" }));
 
 function authenticate(req, res, next) {
-  const match = /^Bearer\\s+([^\\s]+)$/i.exec(req.get("authorization") ?? "");
+  const match = /^Bearer\s+([^\s]+)$/i.exec(req.get("authorization") ?? "");
   const userId = match ? identities.get(match[1]) : null;
   if (!userId) return res.status(401).json({ error: "authentication_required" });
   // The identity map is a fixed test-only stand-in for a verified issuer response.
