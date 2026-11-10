@@ -1,6 +1,6 @@
 # DOMAIN-DECISION-ACCEPTANCE-MATRIX-001
 
-**Status:** ACCEPTANCE SPECIFICATION — NOT EXECUTED  
+**Status:** ACCEPTANCE SPECIFICATION — SYNTHETIC PARITY CASES EXECUTED; CANONICAL SCHEMA CLOSURE PENDING  
 **Date:** 2026-11-10  
 **Baseline:** DEC-001–DEC-005 approved; DEC-006–DEC-008 open  
 **Mode:** Read-only review
@@ -62,6 +62,10 @@ This matrix defines expected positive and negative behavior. It is not a test re
 | PAR-013 | Revoked membership/site link | Server authorization denies | Server authorization denies |
 | PAR-014 | Revoked offline event replay | Server rejects | Server rejects |
 | PAR-015 | Audit history mutation by ordinary app role | Reject | Reject |
+| PAR-016 | Concurrent overlapping temporal binding writes | Exactly one succeeds | Exactly one succeeds |
+| PAR-017 | Adjacent half-open effective periods | Accept | Accept |
+| PAR-018 | Open-ended NULL effective_to | Treat as infinity | Treat as infinity |
+| PAR-019 | UTC microsecond timestamp precision | Preserve canonical precision | Preserve canonical precision |
 
 SQLite parity requires `PRAGMA foreign_keys=ON` on every connection, a pinned minimum SQLite version supporting partial indexes, equivalent triggers, and serialized write transactions for temporal checks.
 

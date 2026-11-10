@@ -1,6 +1,6 @@
 # GH-06-DISPOSABLE-POSTGRESQL-SQLITE-PARITY-HARNESS-001
 
-**Status:** EXECUTABLE PARITY SUBSET ADDED — FULL DEC-008 REMAINS OPEN
+**Status:** 19 SYNTHETIC PARITY CASES IMPLEMENTED — FULL CANONICAL DEC-008 REMAINS OPEN
 **Date:** 2026-11-10
 **File:** `tests/p0-db-gates/parity-test.mjs`
 
@@ -20,15 +20,28 @@ The runner uses one ephemeral PostgreSQL connection and an in-memory SQLite data
 - PAR-008 multiple independent Supplier tenants allowed.
 - PAR-009 audit history immutability.
 - PAR-010 multi-step transaction rollback atomicity.
+- PAR-011 Buyer/Seller participant legal-party match.
+- PAR-012 one tenant cannot occupy both Buyer and Seller participant rows for a transaction.
+- PAR-013 revoked membership denies assignment authorization.
+- PAR-014 revoked site link denies assignment authorization.
+- PAR-015 revoked membership blocks offline command replay.
+- PAR-016 overlapping temporal writes serialize; exactly one transaction commits.
+- PAR-017 adjacent half-open effective periods are accepted.
+- PAR-018 NULL end time represents an open-ended effective period.
+- PAR-019 UTC microsecond timestamp precision is preserved.
 
 Each case compares normalized accepted/rejected outcomes rather than raw engine error messages.
 
 ## 3. Scope limitations
 
-This is a first executable subset, not full DEC-008 acceptance. It does not yet exercise concurrent overlapping temporal writes, full lifecycle transition graph, revoked offline command replay, approval evidence, all 16 previously listed scenarios, or complete production schema fingerprints. PostgreSQL RLS is separately tested by GH-05 and cannot be claimed equivalent in SQLite.
+The current harness executes 15 synthetic relational/authorization scenarios plus four synthetic temporal/concurrency scenarios (PAR-001–019). The temporal runner uses two PostgreSQL sessions with a tenant-row serialization lock and two SQLite connections with writer serialization. The verified temporal cases include overlap rejection under concurrent writes, adjacent half-open periods, open-ended NULL periods, and UTC microsecond precision.
+
+This is still **not full DEC-008 acceptance**. Both runners use a deliberately reduced synthetic schema, not the complete canonical production DDL or all three platform implementations. PAR-013–015 exercise equivalent authorization predicates in synthetic fixtures, not the actual authoritative API or offline replay pipeline. Approval evidence, complete lifecycle transitions, production schema fingerprints, and route-by-route cross-platform parity remain open. PostgreSQL RLS is separately tested by GH-05 and cannot be claimed equivalent in SQLite.
+
+The successful temporal run at code SHA `3511bfa0c8e45dfe70be85b01d6df1ea7b4f383d` reported PAR-016–019: 4 PASS, 0 FAIL. The later parity correction removes a fixture-only nonexistent assignment status predicate; the latest rerun is tracked separately.
 
 The runner must be executed only with a disposable PostgreSQL service. It uses synthetic identifiers and never loads production records.
 
 ## 4. Closure criteria
 
-DEC-008 remains OPEN until the complete accepted schema contract is represented in both engines; all PAR-001–016 scenarios are executable; concurrency and rollback tests pass; engine versions and schema fingerprints are retained; all divergences are dispositioned; and the exact tested commit SHA is reviewed.
+DEC-008 remains OPEN until the complete accepted schema contract is represented in both engines; PAR-001–019 are executable and pass; the complete canonical production schema and all remaining domain acceptance criteria are represented; concurrency and rollback tests pass; engine versions and schema fingerprints are retained; all divergences are dispositioned; and the exact tested commit SHA is reviewed.
