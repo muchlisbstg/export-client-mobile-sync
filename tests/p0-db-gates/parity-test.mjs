@@ -83,7 +83,7 @@ await compare('PAR-006 invalid effective interval',true,()=>pgExec("INSERT INTO 
 await reset();
 await compare('PAR-007 Buyer/Seller legal party must differ',true,()=>pgExec("INSERT INTO commercial_transactions VALUES('tx-bad','party-a','party-a')"),()=>sqExec("INSERT INTO commercial_transactions VALUES(?,?,?)",['tx-bad','party-a','party-a']));
 await reset();
-await compare('PAR-008 multiple independent Supplier tenants allowed',false,async()=>{const r=await pgExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.rows[0].count),2);},()=>{const r=sqExec("SELECT count(*) AS count FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.count),2);});
+await compare('PAR-008 multiple independent Supplier tenants allowed',false,async()=>{const r=await pgExec("SELECT count(*) FROM transaction_participants WHERE role='supplier'");assert.equal(Number(r.rows[0].count),2);},()=>{const r=sqlite.prepare("SELECT count(*) AS count FROM transaction_participants WHERE role='supplier'").get();assert.equal(Number(r.count),2);});
 await reset();
 await compare('PAR-009 audit history immutable',true,()=>pgExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"),()=>sqExec("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'"));
 await reset();
