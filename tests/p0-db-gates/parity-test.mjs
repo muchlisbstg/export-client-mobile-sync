@@ -103,9 +103,25 @@ await compare('PAR-004 mismatched exact site-link tuple',true,()=>pgExec("INSERT
 await reset();
 await compare('PAR-005 duplicate Buyer role across independent tenant',true,async()=>{await pgExec("INSERT INTO tenants VALUES('tenant-extra')");await pgExec("INSERT INTO legal_parties VALUES('party-extra')");await pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");await pgExec("INSERT INTO transaction_participants VALUES('dup-buyer','tenant-extra','tx-1','party-extra','bind-extra','buyer','active')");},()=>{sqExec("INSERT INTO tenants VALUES('tenant-extra')");sqExec("INSERT INTO legal_parties VALUES('party-extra')");sqExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup-buyer','tenant-extra','tx-1','party-extra','bind-extra','buyer','active']);});
 await reset();
+await compare('PAR-004B duplicate Seller partial unique role',true,async()=>{
+  await pgExec("INSERT INTO tenants VALUES('tenant-extra')");
+  await pgExec("INSERT INTO legal_parties VALUES('party-extra')");
+  await pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bind-extra','tenant-extra','party-extra','2026-01-01',NULL,1)");
+  await pgExec("INSERT INTO transaction_participants VALUES('dup-seller','tenant-extra','tx-1','party-extra','bind-extra','seller','active')");
+},()=>{
+  sqExec("INSERT INTO tenants VALUES(?)",['tenant-extra']);
+  sqExec("INSERT INTO legal_parties VALUES(?)",['party-extra']);
+  sqExec("INSERT INTO tenant_legal_party_bindings VALUES(?,?,?,?,NULL,1)",['bind-extra','tenant-extra','party-extra','2026-01-01']);
+  sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['dup-seller','tenant-extra','tx-1','party-extra','bind-extra','seller','active']);
+});
+await reset();
 await compare('PAR-006 invalid effective interval',true,()=>pgExec("INSERT INTO tenant_legal_party_bindings VALUES('bad-interval','tenant-s1','party-s1','2026-02-01','2026-01-01',2)"),()=>sqExec("INSERT INTO tenant_legal_party_bindings VALUES(?,?,?,?,?,?)",['bad-interval','tenant-s1','party-s1','2026-02-01','2026-01-01',2]));
 await reset();
 await compare('PAR-008 invalid status/action vocabulary rejected',true,async()=>{await pgExec("INSERT INTO transaction_participants VALUES('bad-status','tenant-a','tx-1','party-a','bind-a','supplier','unknown')");await pgExec("INSERT INTO transaction_access_assignment_actions VALUES('assign-a','unknown.action')");},()=>{sqExec("INSERT INTO transaction_participants VALUES(?,?,?,?,?,?,?)",['bad-status','tenant-a','tx-1','party-a','bind-a','supplier','unknown']);sqExec("INSERT INTO transaction_access_assignment_actions VALUES(?,?)",['assign-a','unknown.action']);});
+await reset();
+await compare('PAR-008B unknown permission action vocabulary rejected',true,
+  ()=>pgExec("INSERT INTO transaction_access_assignment_actions VALUES('assign-a','unknown.action')"),
+  ()=>sqExec("INSERT INTO transaction_access_assignment_actions VALUES(?,?)",['assign-a','unknown.action']));
 await reset();
 await compare('PAR-007 Buyer/Seller legal party must differ',true,()=>pgExec("INSERT INTO commercial_transactions VALUES('tx-bad','party-a','party-a')"),()=>sqExec("INSERT INTO commercial_transactions VALUES(?,?,?)",['tx-bad','party-a','party-a']));
 await reset();
