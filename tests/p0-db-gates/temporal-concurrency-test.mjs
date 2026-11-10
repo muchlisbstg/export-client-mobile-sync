@@ -120,7 +120,7 @@ try {
   sqB.exec("ROLLBACK");
   const sqCount = Number(sqA.prepare("SELECT count(*) AS count FROM bindings").get().count);
   assert.equal(sqCount, 1);
-  record("PAR-016 concurrent overlapping binding writes serialize; exactly one commits", "PASS", { postgres_committed: pgCount, sqlite_committed: sqCount });
+  record("PAR-010 concurrent overlapping binding writes serialize; exactly one commits", "PASS", { postgres_committed: pgCount, sqlite_committed: sqCount });
 
   await pgA.query("INSERT INTO bindings VALUES($1,$2,$3,$4)", ["binding-adjacent", "tenant-a", "2026-04-01T00:00:00.000000Z", "2026-06-01T00:00:00.000000Z"]);
   sqA.prepare("INSERT INTO bindings VALUES(?,?,?,?)").run("binding-adjacent", "tenant-a", "2026-04-01T00:00:00.000000Z", "2026-06-01T00:00:00.000000Z");
