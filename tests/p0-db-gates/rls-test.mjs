@@ -20,7 +20,7 @@ const roleInfo=await admin.query("SELECT rolsuper,rolbypassrls,rolcreaterole FRO
 assert.equal(roleInfo.rows[0].rolsuper,false); assert.equal(roleInfo.rows[0].rolbypassrls,false);
 await test('RLS-001',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT * FROM audit_events WHERE id='audit-s'"))).rows.length,0));
 await test('RLS-002',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT * FROM commercial_transactions WHERE id='tx-1'"))).rows.length,1));
-await test('RLS-003',async()=>{const r=await as('tenant-a','user-a',()=>role.query("INSERT INTO tenants VALUES ('tenant-forged')"));assert.equal(r.rowCount,1);});
+await test('RLS-003',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("INSERT INTO tenants VALUES ('tenant-forged')")));});
 await test('RLS-004',async()=>assert.equal((await as('tenant-a','user-old',()=>role.query("SELECT * FROM tenant_memberships WHERE id='member-revoked' AND status='active'"))).rows.length,0));
 await test('RLS-005',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT * FROM transaction_participants WHERE id='part-pending'"))).rows.length,0));
 await test('RLS-006',async()=>assert.equal((await as('tenant-s','user-s',()=>role.query("SELECT * FROM transaction_site_links WHERE id='link-a'"))).rows.length,0));
@@ -33,7 +33,7 @@ await test('RLS-012',async()=>assert.equal((await as('tenant-s','user-s',()=>rol
 await test('RLS-013',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT a.* FROM audit_events a JOIN tenants t ON t.id=a.tenant_id WHERE a.id='audit-s'"))).rows.length,0));
 await test('RLS-014',async()=>assert.equal((await as(null,null,()=>role.query("SELECT * FROM tenants"))).rows.length,0));
 await test('RLS-015',async()=>{await as('tenant-a','user-a',()=>role.query("SELECT * FROM audit_events"));assert.equal((await as(null,null,()=>role.query("SELECT * FROM audit_events"))).rows.length,0);});
-await test('RLS-016',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("INSERT INTO tenants VALUES ('tenant-b')")));});
+results.push({id:'RLS-016',status:'BLOCKED',reason:'Client-to-server context forgery must be tested at the HTTP/API boundary. A database session variable is trusted only because direct database access is restricted to the backend; a SQL-level test cannot prove the API rejects client-supplied tenant context.'});
 await test('RLS-017',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("DELETE FROM audit_events WHERE id='audit-a'")));});
 await test('RLS-018',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT * FROM (SELECT * FROM audit_events) q WHERE id='audit-s'"))).rows.length,0));
 await role.end(); await admin.end();
