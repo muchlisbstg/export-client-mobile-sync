@@ -27,7 +27,7 @@ ALTER TABLE permission_actions ENABLE ROW LEVEL SECURITY; ALTER TABLE permission
 
 CREATE POLICY tenant_scope ON tenants USING(id=app_tenant()) WITH CHECK(id=app_tenant());
 CREATE POLICY membership_scope ON tenant_memberships USING(tenant_id=app_tenant() AND user_id=app_user() AND status='active') WITH CHECK(tenant_id=app_tenant() AND user_id=app_user());
-CREATE POLICY transaction_scope ON commercial_transactions USING(EXISTS(SELECT 1 FROM transaction_participants p WHERE p.transaction_id=id AND p.tenant_id=app_tenant() AND p.status='active')) WITH CHECK(EXISTS(SELECT 1 FROM transaction_participants p WHERE p.transaction_id=id AND p.tenant_id=app_tenant() AND p.status='active'));
+CREATE POLICY transaction_scope ON commercial_transactions USING(EXISTS(SELECT 1 FROM transaction_participants p WHERE p.transaction_id=commercial_transactions.id AND p.tenant_id=app_tenant() AND p.status='active')) WITH CHECK(EXISTS(SELECT 1 FROM transaction_participants p WHERE p.transaction_id=commercial_transactions.id AND p.tenant_id=app_tenant() AND p.status='active'));
 CREATE POLICY participant_scope ON transaction_participants USING(tenant_id=app_tenant() AND status='active') WITH CHECK(tenant_id=app_tenant());
 CREATE POLICY site_scope ON supply_sites USING(tenant_id=app_tenant()) WITH CHECK(tenant_id=app_tenant());
 CREATE POLICY site_link_scope ON transaction_site_links USING(tenant_id=app_tenant() AND status='active') WITH CHECK(tenant_id=app_tenant());
