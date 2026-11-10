@@ -43,6 +43,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare evidence directory
+        run: |
+          mkdir -p artifacts
+          printf 'candidate_sha=%s\n' "$GITHUB_SHA" > artifacts/run-context.txt
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -55,19 +60,34 @@ jobs:
       - name: Install disposable PostgreSQL client dependency without lockfile mutation
         run: npm install --no-save --package-lock=false pg@8.16.3
 
-      - name: Initialize disposable RLS fixture
-        run: psql "$PG_ADMIN_URL" -v ON_ERROR_STOP=1 -f tests/p0-db-gates/postgres-rls.sql
-
-      - name: Run parity and RLS suites; preserve exit codes
-        id: gates
+      - name: Initialize disposable RLS fixture; preserve output and exit code
+        id: fixture
         shell: bash
         run: |
-          mkdir -p artifacts
           set +e
-          node tests/p0-db-gates/parity-test.mjs > artifacts/parity.json 2>&1
-          parity_exit=$?
-          node tests/p0-db-gates/rls-test.mjs > artifacts/rls.json 2>&1
-          rls_exit=$?
+          psql "$PG_ADMIN_URL" -v ON_ERROR_STOP=1 -f tests/p0-db-gates/postgres-rls.sql > artifacts/fixture.log 2>&1
+          fixture_exit=$?
+          set -e
+          printf 'fixture_exit=%s\n' "$fixture_exit" > artifacts/fixture-status.txt
+          echo "exit_code=$fixture_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Run parity and RLS suites; preserve all outcomes
+        id: gates
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ "${{ steps.fixture.outputs.exit_code }}" = "0" ]; then
+            node tests/p0-db-gates/parity-test.mjs > artifacts/parity.json 2>&1
+            parity_exit=$?
+            node tests/p0-db-gates/rls-test.mjs > artifacts/rls.json 2>&1
+            rls_exit=$?
+          else
+            printf '{"suite":"parity","status":"NOT_RUN","reason":"fixture initialization failed"}\n' > artifacts/parity.json
+            printf '{"suite":"rls","status":"NOT_RUN","reason":"fixture initialization failed"}\n' > artifacts/rls.json
+            parity_exit=125
+            rls_exit=125
+          fi
           set -e
           printf 'parity_exit=%s\nrls_exit=%s\n' "$parity_exit" "$rls_exit" > artifacts/exit-status.txt
           {
@@ -94,5 +114,6 @@ jobs:
       - name: Enforce fail-closed gate result
         if: always()
         run: |
+          test "${{ steps.fixture.outputs.exit_code }}" = "0"
           test "${{ steps.gates.outputs.parity_exit }}" = "0"
           test "${{ steps.gates.outputs.rls_exit }}" = "0"
