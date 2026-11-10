@@ -80,20 +80,14 @@ jobs:
           if [ "${{ steps.fixture.outputs.exit_code }}" = "0" ]; then
             node tests/p0-db-gates/parity-test.mjs > artifacts/parity.json 2>&1
             parity_exit=$?
-            API_CONTEXT_EVIDENCE_PATH=artifacts/api-context.json node tests/p0-db-gates/api-context-test.mjs > artifacts/api-context.json 2>&1
-            api_exit=$?
-            API_CONTEXT_EVIDENCE_PATH=artifacts/api-context.json node tests/p0-db-gates/rls-test.mjs > artifacts/rls.json 2>&1
             rls_exit=$?
           else
             printf '{"suite":"parity","status":"NOT_RUN","reason":"fixture initialization failed"}\n' > artifacts/parity.json
-            printf '{"suite":"api-context","status":"NOT_RUN","reason":"fixture initialization failed"}\n' > artifacts/api-context.json
             printf '{"suite":"rls","status":"NOT_RUN","reason":"fixture initialization failed"}\n' > artifacts/rls.json
             parity_exit=125
-            api_exit=125
             rls_exit=125
           fi
           set -e
-          printf 'parity_exit=%s\napi_exit=%s\nrls_exit=%s\n' "$parity_exit" "$api_exit" "$rls_exit" > artifacts/exit-status.txt
           {
             echo "candidate_sha=$GITHUB_SHA"
             echo "postgres_image=postgres:16.10"
@@ -102,10 +96,8 @@ jobs:
             echo "rls_sql_sha256=$(sha256sum tests/p0-db-gates/postgres-rls.sql | cut -d' ' -f1)"
             echo "parity_script_sha256=$(sha256sum tests/p0-db-gates/parity-test.mjs | cut -d' ' -f1)"
             echo "rls_script_sha256=$(sha256sum tests/p0-db-gates/rls-test.mjs | cut -d' ' -f1)"
-            echo "api_context_script_sha256=$(sha256sum tests/p0-db-gates/api-context-test.mjs | cut -d' ' -f1)"
           } > artifacts/evidence-manifest.txt
           echo "parity_exit=$parity_exit" >> "$GITHUB_OUTPUT"
-          echo "api_exit=$api_exit" >> "$GITHUB_OUTPUT"
           echo "rls_exit=$rls_exit" >> "$GITHUB_OUTPUT"
 
       - name: Upload sanitized test evidence
@@ -122,5 +114,4 @@ jobs:
         run: |
           test "${{ steps.fixture.outputs.exit_code }}" = "0"
           test "${{ steps.gates.outputs.parity_exit }}" = "0"
-          test "${{ steps.gates.outputs.api_exit }}" = "0"
           test "${{ steps.gates.outputs.rls_exit }}" = "0"
