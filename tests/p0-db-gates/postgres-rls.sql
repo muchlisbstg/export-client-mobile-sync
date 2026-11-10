@@ -40,7 +40,10 @@ CREATE POLICY audit_scope ON audit_events USING(tenant_id=app_tenant() AND EXIST
 CREATE POLICY actions_read ON permission_actions FOR SELECT USING(active=true);
 
 GRANT USAGE ON SCHEMA public TO app_api;
-GRANT SELECT,INSERT,UPDATE,DELETE ON tenants,tenant_memberships,commercial_transactions,transaction_participants,supply_sites,transaction_site_links,transaction_access_assignments,audit_events TO app_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON tenants,commercial_transactions,transaction_participants,supply_sites,transaction_site_links,transaction_access_assignments,audit_events TO app_api;
+-- Membership lifecycle is managed only by a separately authorized service boundary.
+-- The ordinary request role is read-only and cannot self-enroll, reactivate or revoke memberships.
+GRANT SELECT ON tenant_memberships TO app_api;
 GRANT SELECT ON transaction_access_assignment_actions TO app_api;
 GRANT SELECT ON permission_actions TO app_api;
 GRANT EXECUTE ON FUNCTION app_tenant(),app_user() TO app_api;
