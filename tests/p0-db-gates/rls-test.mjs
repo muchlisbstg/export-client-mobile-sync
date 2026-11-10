@@ -51,6 +51,7 @@ await test('RLS-019',async()=>{await assert.rejects(()=>as('tenant-a','user-a',(
 await test('RLS-020',async()=>{await assert.rejects(()=>as('tenant-a','user-old',()=>role.query("INSERT INTO transaction_participants VALUES ('forged-part','tenant-a','tx-2','supplier','active')")));});
 await test('RLS-021',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("INSERT INTO transaction_site_links VALUES ('forged-link','tenant-a','tx-1','part-b','site-a','active')")));});
 await test('RLS-017',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("DELETE FROM audit_events WHERE id='audit-a'")));});
+await test('RLS-032',async()=>{await assert.rejects(()=>as('tenant-a','user-a',()=>role.query("UPDATE audit_events SET event_type='tampered' WHERE id='audit-a'")));});
 await test('RLS-018',async()=>assert.equal((await as('tenant-a','user-a',()=>role.query("SELECT * FROM (SELECT * FROM audit_events) q WHERE id='audit-s'"))).rows.length,0));
 await role.end(); await admin.end();
 console.log(JSON.stringify({suite:'GH-05 disposable PostgreSQL RLS only',role:'app_api',results,passed:results.filter(x=>x.status==='PASS').length,failed:results.filter(x=>x.status==='FAIL').length,context_provenance:'NOT_VERIFIED: app_api can set custom app.tenant_id/app.user_id; GH-09 signed/verified identity provenance remains a separate required gate'},null,2));
