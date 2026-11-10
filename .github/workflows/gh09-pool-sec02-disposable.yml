@@ -7,6 +7,8 @@ on:
     paths:
       - "tests/p0-db-gates/api-context-test.mjs"
       - "tests/p0-db-gates/postgres-rls.sql"
+      - "server/auth.mjs"
+      - "test/auth.test.mjs"
       - ".github/workflows/gh09-pool-sec02-disposable.yml"
   workflow_dispatch:
 
