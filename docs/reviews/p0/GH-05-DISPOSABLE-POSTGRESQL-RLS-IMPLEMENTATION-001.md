@@ -1,36 +1,47 @@
 # GH-05-DISPOSABLE-POSTGRESQL-RLS-IMPLEMENTATION-001
 
-**Status:** EXECUTABLE TEST FIXTURE ADDED — REVIEW AND RUN REQUIRED
-**Date:** 2026-11-10
-**Scope:** Disposable PostgreSQL only; no production/staging DB.
-**Files:** `tests/p0-db-gates/postgres-rls.sql`, `tests/p0-db-gates/rls-test.mjs`
+**Status:** DISPOSABLE RLS FIXTURE EXECUTED — 34/34 PASS; PRODUCTION SECURITY SIGN-OFF OPEN  
+**Date:** 2026-11-10  
+**Branch:** `review/p0-domain-schema-readonly-2026-11-10`  
+**Evidence:** [GitHub Actions run 42800478587](https://github.com/muchlisbstg/export-client-mobile-sync/actions/runs/42800478587)  
+**Commit:** `55b91afa98bea46a0258db6b4ef9f7819d4c6cda`
 
 ## 1. Safety boundary
 
-The SQL creates a test-only `app_api` role with NOSUPERUSER and NOBYPASSRLS and a minimal disposable schema. It is designed for an ephemeral GitHub Actions PostgreSQL service. It must never be applied to an existing database. The API role password is a fixed disposable test credential and must never be reused.
+The SQL creates a test-only `app_api` role and a minimal disposable schema for an ephemeral GitHub Actions PostgreSQL service. It must never be applied to an existing database. No staging/production database is part of this evidence.
 
-## 2. Implemented scope
+## 2. Implemented and executed scope
 
-The test schema exercises tenant, membership, transaction, participant, site, exact site-link, assignment, assignment-action, permission catalog and audit-event row security. Tenant-owned tables have RLS enabled and FORCE RLS. The test client connects as `app_api`, not the schema owner. RLS-001–018 are enumerated in the runner.
+The fixture exercises tenant, membership, transaction, participant, site, exact site-link, assignment, assignment-action, permission catalog and audit-event row security. Tenant-owned tables have RLS enabled and FORCE RLS. The test client connects as `app_api`, not the schema owner.
 
-The server context is represented by transaction-local `app.tenant_id` and `app.user_id` settings. This is a test of the database boundary under a trusted backend-established context. It is **not** proof that arbitrary end-user SQL can safely choose those settings; direct database access must remain unavailable to end users. The API must derive these settings only after authenticating the user and resolving active membership. Client-supplied tenant headers are selectors, never trusted context.
+- PostgreSQL 16.10.
+- Fixture initialization exit code 0.
+- 34 RLS tests passed; 0 failed.
+- `app_api` is NOSUPERUSER, NOBYPASSRLS and NOCREATEROLE.
+- `app_api` has SELECT-only permission on `tenant_memberships`; membership lifecycle writes require a separately authorized service boundary.
+- Assignment-action table is SELECT-only for ordinary app_api.
+- Audit UPDATE/DELETE are denied.
 
-## 3. Important non-pass
+## 3. Self-enrollment finding
 
-RLS-016 is deliberately marked BLOCKED in the runner because it is an HTTP/API trust-boundary test, not a property that can be proven by a raw SQL role session. It requires an API integration test that submits a forged tenant selector and verifies that the server ignores/rejects it after resolving the authenticated membership. The suite exits non-zero while this case remains blocked.
+An earlier fixture grant allowed app_api to INSERT membership rows under a policy whose WITH CHECK matched the session user. This allowed a potential self-enrollment attempt. The grant was tightened to SELECT-only, and RLS-033–035 now prove that ordinary app_api cannot self-enroll, reactivate its revoked membership, or delete/revoke a membership. All passed in run 42800478587.
 
-RLS-003 verifies a forged tenant-row write is rejected by RLS. RLS-004 checks revoked membership cannot satisfy the active membership read predicate. RLS-015 checks transaction-local context does not leak to a subsequent pooled transaction. RLS-017 checks ordinary API role cannot update/delete audit history.
+## 4. Context provenance limitation
 
-## 4. Known limitations before DEC-006 closure
+The server context in this fixture is represented by transaction-local `app.tenant_id` and `app.user_id` settings. This is a test of RLS behavior under a trusted backend-established context. A SQL-capable app_api session can still call set_config() and choose those values. Pool reset prevents accidental leakage, not deliberate arbitrary-SQL forgery.
 
-- This is a focused executable fixture, not yet a complete production schema policy migration.
-- Table inventory must be reconciled against all physical PostgreSQL tables, views, partitions and functions.
-- The transaction policy currently relies on the active participant predicate; lifecycle and approval predicates require complete domain integration.
-- Action authorization requires the API to check active action grants; the fixture covers visibility through assignment parent scope but does not replace endpoint-level policy tests.
-- View/function/partition ownership and SECURITY DEFINER review remains required.
-- The API's actual pool initialization, context-setting code and context reset must be tested in the real service.
-- RLS-016 API-level test is intentionally outstanding.
+GH-09 is tested separately through a disposable HTTP adapter and the repository's `createSupabaseAuth` middleware, with a mocked identity-provider response. It reports 13 PASS, 0 FAIL, but it is not the production PostgreSQL API composition and does not validate a live Supabase JWT. Therefore RLS-016 / DEC-006 production identity provenance remains BLOCKED.
 
-## 5. Acceptance
+## 5. Acceptance and remaining work
 
-DEC-006 cannot pass until all 18 cases are executable and pass, the role/ownership/grant inventory is reviewed, the complete physical schema is covered, and the API integration proves trusted context derivation. This test fixture is not an authorization implementation for the live service.
+**GH-05 disposable RLS fixture: PASS.**  
+**Overall P0 security approval / schema freeze: NOT APPROVED.**
+
+Before DEC-006 closure:
+- reconcile all real PostgreSQL tables, views, partitions, functions, owners and grants;
+- prove production API identity and membership resolution;
+- test actual production pool context establishment/reset, including multi-connection concurrency and cancellation;
+- independently review SECURITY DEFINER and bypass paths;
+- reconcile all canonical schema and API acceptance criteria.
+
+No migration or production/staging mutation is authorized by this test result.
