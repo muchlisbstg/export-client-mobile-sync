@@ -5,7 +5,9 @@
 **Repository:** muchlisbstg/export-client-mobile-sync
 **Branch:** `review/p0-domain-schema-readonly-2026-11-10`
 **Workflow:** `.github/workflows/p0-disposable-db-gates.yml`
-**Workflow commit:** `488d1414cbb333c2beac460863d4d1e71397ca25`
+**Workflow file commit:** `488d1414cbb333c2beac460863d4d1e71397ca25`
+**Latest harness source commit:** `5ac0986e97ed1bf21d7013c2746d58a85fee1afe`
+**Trigger:** push to the review branch after the latest harness source update; run ID/result not read back.
 
 ## 1. Workflow configuration
 
