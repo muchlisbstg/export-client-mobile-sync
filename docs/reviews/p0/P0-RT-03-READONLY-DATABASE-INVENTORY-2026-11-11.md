@@ -261,3 +261,30 @@ To close the remaining gap, the owner must provide authorized read-only access t
 - P0 Release Readiness: **BLOCKED**.
 
 No application code, environment configuration, deployment, database schema, migration, DDL, seed, backfill, role, grant, or business data was changed.
+
+
+## 10. Future infrastructure target — Hostinger — 2026-11-11
+
+The owner confirmed Hostinger as the intended future hosting target, but the service has **not yet been funded**.
+
+| Attribute | Status |
+|---|---|
+| Hosting provider target | Hostinger |
+| Target classification | **PLANNED — UNFUNDED** |
+| Purchased plan / service tier | NOT SELECTED / NOT VERIFIED |
+| Account/service ID | NOT PROVIDED / NOT VERIFIED |
+| VPS/shared/cloud instance, IP, SSH | NOT PROVISIONED / NOT VERIFIED |
+| API deployment/process | NOT DEPLOYED / NOT VERIFIED |
+| Effective database connection | NOT VERIFIED |
+
+This clarification records deployment intent only. It is not proof of an active Hostinger account or runtime. Do not attempt runtime discovery or database integrity checks against a presumed Hostinger service until provisioning and authorized read-only access are available.
+
+### 10.1 RT-03A–RT-03E status
+
+- **RT-03A — Source Inventory: RECORDED.** Express/SQLite configuration and migration source files are documented above. Source files do not prove a live DB file or applied migration ledger.
+- **RT-03B — Infrastructure Target: RECORDED.** Hostinger is **PLANNED — UNFUNDED**.
+- **RT-03C — Staging Inventory: RECORDED.** Supabase staging evidence is preserved in the runtime addendum; it is not proven API-connected.
+- **RT-03D — Runtime Verification: NOT STARTED.** Trigger only after the actual hosting service is funded/provisioned and its identity can be verified read-only.
+- **RT-03E — Database Integrity: NOT STARTED.** Trigger only after the actual API database connection target and consistent snapshot are confirmed.
+
+RT-03 overall remains **IN PROGRESS**. P0 Release Readiness remains **BLOCKED**.
