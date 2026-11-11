@@ -221,3 +221,40 @@ This fingerprint is for the observed Supabase staging catalog snapshot only. It 
 - P0 Release Readiness remains **BLOCKED**.
 - No implementation, migration, DDL, seed, backfill, database mutation, deployment, production configuration change, PR merge, or `main` write was performed.
 - No secrets or application row data were accessed or included.
+
+
+## 10. Infrastructure target clarification — Hostinger — 2026-11-11
+
+The project owner confirmed that **Hostinger is the intended future hosting target, but it has not yet been funded**.
+
+| Attribute | Current disposition |
+|---|---|
+| Intended provider | Hostinger |
+| Target status | **PLANNED — UNFUNDED** |
+| Funding | Not available / not yet budgeted |
+| Service plan or product | NOT SELECTED / NOT VERIFIED |
+| Hostinger account/service identifier | NOT PROVIDED / NOT VERIFIED |
+| VPS, shared/cloud hosting instance, IP, SSH endpoint | NOT PROVISIONED / NOT VERIFIED |
+| API process on Hostinger | NOT DEPLOYED / NOT VERIFIED |
+| Actual API database path/connection | NOT VERIFIED |
+
+This is an owner-confirmed deployment intention, not infrastructure evidence. It must not be represented as an active Hostinger account, purchased plan, provisioned server, deployed service, or database endpoint. No Hostinger account or server was accessed in this evidence pass.
+
+### 10.1 RT-03 workstream decomposition
+
+- **RT-03A — Source Inventory: RECORDED.** Repository source defines an Express API using `better-sqlite3`, default SQLite path `server/data/api.sqlite`, optional `API_DB_PATH`, and repository migration scripts. Source declarations do not prove a live SQLite file or applied migration state.
+- **RT-03B — Infrastructure Target: RECORDED.** Hostinger is **PLANNED — UNFUNDED**. No service provisioning or deployment is implied.
+- **RT-03C — Staging Inventory: RECORDED WITH RECONCILIATION NOTE.** Supabase `export-client-staging` is PostgreSQL 17.11 in Mumbai and its catalog evidence is preserved in this addendum. It is not proven to be API-connected and has no observed Export Client business relations in `public`.
+- **RT-03D — Runtime Verification: NOT STARTED / BLOCKED BY PROVISIONING.** Begin only after hosting is funded and the actual service is provisioned, with authorized read-only access to service/deployment metadata and effective configuration.
+- **RT-03E — Database Integrity: NOT STARTED / BLOCKED BY CONFIRMED CONNECTION.** Begin only after the actual application database is identified and a consistent read-only snapshot is available. Do not substitute the Supabase staging snapshot for an unidentified API database.
+
+### 10.2 Staging snapshot reconciliation note
+
+The historical evidence in this addendum contains two catalog summaries with different counts/fingerprints: the normalized catalog summary reports 26 RLS-enabled relations and fingerprint `4b8766e34c456286a0904c6a9df0058cd1c5341a39f9a727c85bfa182b39c520`; a separately appended earlier provider inventory reports 27 RLS-enabled tables and fingerprint `093732f97225a4abf3656c3285e295295bba158d7297a80de185942ce2362ded`. These values are retained as distinct recorded evidence and must not be silently treated as the same canonical snapshot. Query scope/canonicalization and snapshot provenance require reconciliation before using them for a before/after comparison or a database-integrity conclusion.
+
+### 10.3 Current safety disposition
+
+- No Hostinger account, plan, server, API process, or database was provisioned or accessed.
+- No deployment, configuration mutation, database connection, DDL, migration, seed, backfill, or data mutation was performed.
+- RT-03 remains **IN PROGRESS**; P0 Release Readiness remains **BLOCKED**.
+- Independent Security and Database reviews remain mandatory; reviewer funding remains **BLOCKED — budget unavailable**.
