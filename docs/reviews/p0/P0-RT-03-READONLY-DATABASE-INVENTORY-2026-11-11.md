@@ -125,3 +125,139 @@ Potential channels are volunteer peer review, open-source maintainer/community r
 - P0 Release Readiness: **BLOCKED**.
 
 No database was connected to, inspected, modified, or exported during this repository-only pass. No implementation, migration, DDL, seed, backfill, deployment, or merge was performed.
+
+
+## 9. Connected-provider runtime and staging evidence — 2026-11-11
+
+**Inspection mode:** provider metadata and SQL catalog reads only. No environment-variable values, passwords, keys, tokens, or business rows were requested or exported. SQL statements were SELECT-only.
+
+### 9.1 Vercel deployment discovery
+
+A connected Vercel project named `export-client-mobile-sync` was found:
+
+| Attribute | Observed value |
+|---|---|
+| Vercel project ID | `prj_d7QLVAnsgo7QoDA9xha7fWkbbbC9` |
+| Connected Git repository | `muchlisbstg/export-client-mobile-sync` |
+| Production deployment ID | `dpl_7htFkCME5YMAWfPw7vemATRsc1PJ` |
+| Production state | `READY` |
+| Production target | `production` |
+| Production source branch | `main` |
+| Production source SHA | `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1` |
+| Runtime region | `iad1` (Vercel region identifier) |
+| Aliases | `export-client-mobile-sync.vercel.app` and Vercel-generated aliases |
+| Project SSO protection | Enabled for all except custom domains |
+| Vercel environment variables | No entries returned; hidden production variable count 0 |
+| Recent function logs | No function log groups returned for the sampled latest 30-minute window |
+
+A newer Vercel deployment exists for the audit branch at SHA `846c5823f9f43cfc09920504cd83e50d7f0e1203`, but its deployment target is null; it is not the production-target deployment.
+
+The production Vercel deployment is evidence of a production-target deployment of the repository's Web project. It is **not evidence that the Express API is running there**:
+- No root `vercel.json` was found.
+- The repository tree contains no root `api/` serverless route directory.
+- The API entrypoint is `server/index.mjs`, launched by the package script `dev:api` as a standalone Node process.
+- The API source opens SQLite directly and resolves `API_DB_PATH` from runtime options/environment/default.
+- The Vercel environment-variable listing returned no variables, including no visible `API_DB_PATH` or `SUPABASE_URL` names.
+- The deployment file-tree endpoint returned 404 (file tree unavailable); direct endpoint verification was not completed because the Vercel project has SSO protection and the web fetch could not access the deployment.
+
+**Conclusion:** Vercel Web deployment is identified; the actual Express API service/host and its effective database configuration remain **NOT VERIFIED**. Do not infer that the Web deployment is the API host.
+
+### 9.2 Supabase staging database — live metadata snapshot
+
+A connected Supabase project named `export-client-staging` was inspected:
+
+| Attribute | Observed value |
+|---|---|
+| Project ref | `utvxuzmtevnmrcpxfpaa` |
+| Project status | `ACTIVE_HEALTHY` |
+| Region | `ap-south-1` (Mumbai) |
+| Database host | `db.utvxuzmtevnmrcpxfpaa.supabase.co` |
+| Database port | `5432` |
+| Database name | `postgres` |
+| Engine/version | PostgreSQL `17.11.0.011` / engine major `17` |
+| Server encoding / timezone | UTF8 / UTC |
+| Catalog inspection session role | `postgres` (`rolbypassrls=true`) |
+
+This is the known **staging** database target, not a proven database connection used by the deployed Express API. The catalog inspection was performed using an elevated administrative role; it does not establish the privileges or identity of an application runtime role.
+
+### 9.3 Physical catalog inventory of the staging project
+
+The read-only catalog query returned the following counts across non-system schemas:
+
+| Object/control | Observed count |
+|---|---:|
+| Tables (including platform-managed schemas) | 41 |
+| Views/materialized views | 3 |
+| Indexes | 145 |
+| Constraints | 142 |
+| — Primary keys | 41 |
+| — Foreign keys | 30 |
+| — Unique constraints | 13 |
+| — Check constraints | 58 |
+| Triggers | 15 |
+| Database roles (excluding built-in `pg_*` roles) | 15 |
+| Table privilege grant rows | 369 |
+| Tables with RLS enabled | 27 |
+| Tables with FORCE ROW LEVEL SECURITY | 0 |
+| Policies returned by `pg_policies` | 0 |
+
+**Application-schema finding:** schema `public` contains **zero tables and zero relations**. The 41 tables are in Supabase-managed `auth`, `realtime`, `storage`, and `vault` schemas. No Export Client business tables were found in this staging project.
+
+The catalog includes privileged platform roles. The current inspection role `postgres`, `service_role`, `supabase_admin`, `supabase_etl_admin`, and `supabase_read_only_user` have `BYPASSRLS` according to the role catalog; `supabase_admin` is also marked superuser. These are platform/database roles, not evidence of an application runtime identity. No role was created or changed.
+
+### 9.4 Migration history reconciliation
+
+- Supabase project migration-list API returned an empty application migration list.
+- Platform-managed migration ledgers exist:
+  - `auth.schema_migrations`: 82 versions (first `00`, latest `20260831180000`).
+  - `realtime.schema_migrations`: 91 versions (first `20211116024918`, latest `20261009120000`).
+  - `storage.migrations`: 80 versions (first `add_owner_id_column_deprecate_owner`, latest `vector-buckets`).
+- These are Supabase service-component migration ledgers, not Export Client application migration history.
+- No application business schema or application migration ledger was identified in `public`.
+
+**Conclusion:** the connected staging project has platform-managed PostgreSQL objects but no Export Client application schema or recorded application migrations. This does not establish whether a separate runtime database exists elsewhere.
+
+### 9.5 Integrity and security metadata
+
+- Catalog validation returned one unvalidated constraint: `realtime.messages.messages_payload_exclusive`, a platform-managed `CHECK (payload IS NULL OR binary_payload IS NULL) NOT VALID`.
+- No other unvalidated constraints were returned in the inspected catalog.
+- The `amcheck` extension is not installed. No physical heap/index integrity check or `pg_amcheck` run was performed.
+- Supabase Health Advisor returned no lints.
+- Supabase Security Advisor returned one warning: **Leaked Password Protection Disabled**.
+- No application tables exist in `public`, so no Export Client business-row referential-integrity scan could be performed.
+- The absence of a Health Advisor lint is not a physical database integrity proof.
+
+### 9.6 Staging schema metadata fingerprint
+
+A SHA-256 fingerprint was generated from a canonical, sorted catalog representation covering non-system schema ownership, relation metadata, columns/defaults/nullability, constraints and validation state, indexes, triggers, RLS policies, function definitions, non-`pg_*` role attributes, table privilege grant rows, and installed extensions.
+
+| Attribute | Value |
+|---|---|
+| Fingerprint | `093732f97225a4abf3656c3285e295295bba158d7297a80de185942ce2362ded` |
+| Canonical metadata bytes | 264,929 |
+| Catalog items | 1,452 |
+| Scope | Supabase `export-client-staging` snapshot only |
+| Data rows included | No |
+
+This is a point-in-time **catalog metadata fingerprint**, not a fingerprint of an application production database. It does not prove runtime connection provenance or physical storage integrity. Recompute with the same canonicalization query and scope before comparing future snapshots.
+
+### 9.7 Remaining access gap and next safe action
+
+The actual Express API service remains unidentified. Existing repository discovery notes designate AWS Console `ap-southeast-1` (Singapore) as the investigation target, but no AWS account/service connector is available in this session. The AWS account inventory has therefore **not** been performed. Hostinger or any other VPS/provider runtime has likewise not been confirmed.
+
+To close the remaining gap, the owner must provide authorized read-only access to the actual hosting control plane (or its service inventory export) and identify whether the API is on AWS, a VPS/Hostinger, another managed Node host, or not deployed. Then record the running service, deployment SHA, process entrypoint, working directory, effective database variable name and resolved target (redacting all secret values), and database-to-service mapping. Only after that identity is proven should the physical runtime database catalog be inspected.
+
+### 9.8 Updated RT-03 disposition
+
+- Vercel production Web deployment: **IDENTIFIED**.
+- Express API host/process: **NOT VERIFIED**.
+- Supabase staging project and PostgreSQL engine/version/location: **IDENTIFIED**.
+- Supabase staging physical catalog: **INVENTORIED**; no Export Client business schema present.
+- Actual API-connected database engine/version/location: **NOT VERIFIED**.
+- Actual API database schema and migration history: **NOT VERIFIED**.
+- Staging catalog metadata fingerprint: **RECORDED**.
+- Physical storage integrity: **NOT VERIFIED**.
+- RT-03 overall: **IN PROGRESS**.
+- P0 Release Readiness: **BLOCKED**.
+
+No application code, environment configuration, deployment, database schema, migration, DDL, seed, backfill, role, grant, or business data was changed.
