@@ -36,7 +36,7 @@ A scoped PASS does not automatically close a broader release gate.
 Artifact SHA-256 values:
 - GH-05: `7cd59a0e886f021f61526bda22f5a66f4a4cbb293cd098ec45e522a2f3479347`
 - GH-06: `4a9b9d3f0a2f5a14a9775ad761d420bd4b18521b7a9a5ab79627a2e8b89cdce5`
-- GH-09: `9e39d21c98d9fdb1ae02821e4d28a74bb8c4ccd36b9a9aee1ab589c405f59765d5`
+- GH-09: `9e39d21c98d9fdb1ae02821e4d28a74bb8c4ccd36b9aee1ab589c405f59765d5`
 
 The GH-05 and GH-06 tests ran on SHA `1ea10b5`; GH-09 ran on earlier SHA `e402474`. The report/evidence reconciliation commit is newer. These are not one-SHA end-to-end security and database proofs.
 
