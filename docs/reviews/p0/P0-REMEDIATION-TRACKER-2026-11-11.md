@@ -5,7 +5,8 @@
 **Controlling baseline:** [P0 Release Readiness Deep Audit](../P0-RELEASE-READINESS-DEEP-AUDIT-2026-11-11.md)  
 **Baseline branch:** `audit/p0-release-readiness-deep-2026-11-11`  
 **Baseline commit:** `03221982c06de2ebce23000c703baff3b1e8200b`  
-**Tracker branch:** `planning/p0-remediation-tracker-2026-11-11`  
+**Tracker origin branch:** `planning/p0-remediation-tracker-2026-11-11`  
+**Current evidence branch:** `audit/p0-rt03-readonly-inventory-2026-11-11`  
 **Tracker mode:** Planning and evidence governance only — no implementation authorized.  
 **Overall release status:** **BLOCKED — NOT RELEASE READY**
 
@@ -21,7 +22,9 @@ It is a planning artifact. Creating or updating this tracker does not authorize 
 2. Record the exact repository, branch, commit SHA, workflow run, artifact identifier, SHA-256 digest, test scope, and limitations for every evidence submission.
 3. A PASS applies only to the tested scope and SHA. It does not close a broader control unless the acceptance criteria below are met.
 4. No work item may be marked DONE without linked evidence and the required reviewer decision.
-5. Security and Database reviews must be independent. Reviewer identities are **TBD**; do not infer or self-assign approval.
+5. Independent Security Review and Independent Database Review remain mandatory release gates. Reviewer appointment is **BLOCKED — budget unavailable**; identities remain TBD. Budget constraints do not waive, downgrade, or satisfy either review. Do not infer or self-assign approval.  
+6. Where paid review is not currently feasible, prepare a reviewer-ready evidence packet for volunteer open-source peer review or academic collaboration. Such participation must still document competence, identity, independence, scope, conflicts, and exact evidence reviewed; it does not automatically satisfy formal approval.  
+7. RT-03 repository/source inspection may proceed without a paid reviewer, but actual runtime discovery requires authorized read-only access and must not mutate any environment.
 6. All implementation, when separately authorized, must use isolated working branches and reviewable PRs. No direct `main` writes or automatic merges.
 7. No schema freeze, migration, DDL, deployment, or release approval is implied by this tracker.
 
@@ -42,9 +45,9 @@ It is a planning artifact. Creating or updating this tracker does not authorize 
 
 | Order / ID | Work package | Priority | Initial status | Dependency |
 |---|---|---|---|---|
-| 01 — P0-RT-01 | Appoint independent Security and Database reviewers | P0 / Gate | BLOCKED | Management appointment and independence confirmation |
+| 01 — P0-RT-01 | Appoint independent Security and Database reviewers | P0 / Gate | BLOCKED — budget unavailable | Funding/resource availability and independence confirmation |
 | 02 — P0-RT-02 | Resolve transaction-party model and tenant/transaction/site composite-FK decisions | P0 / Data model | BLOCKED | RT-01; domain decision owners |
-| 03 — P0-RT-03 | Inventory actual runtime database, migrations, schema objects, roles, ownership, and policies | P0 / Discovery | NOT STARTED | Read-only access and agreed inventory scope |
+| 03 — P0-RT-03 | Inventory actual runtime database, migrations, schema objects, roles, ownership, and policies | P0 / Discovery | IN PROGRESS — source inventory only | Authorized read-only runtime access and confirmed database identity |
 | 04 — P0-RT-04 | Establish trusted identity provenance and production RLS boundary | P0 / Security | BLOCKED | RT-01, RT-03, RT-02 where schema-dependent |
 | 05 — P0-RT-05 | Integrate verified identity and least-privilege membership in authoritative API | P0 / Backend security | BLOCKED | RT-04; separate implementation authorization |
 | 06 — P0-RT-06 | Validate GH-09 / POOL-01 against actual server and multi-connection pool | P0 / Runtime security | BLOCKED | RT-05; disposable test environment and approved test plan |
