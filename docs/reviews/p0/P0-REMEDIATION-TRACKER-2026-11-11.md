@@ -64,15 +64,17 @@ It is a planning artifact. Creating or updating this tracker does not authorize 
 
 **Objective:** establish independent technical oversight before approval-dependent remediation.
 
+**Current status: BLOCKED — budget unavailable.** No paid reviewer has been appointed. This is a resource constraint, not a waiver, downgrade, or acceptance of residual risk.
+
 Acceptance criteria:
 - A Security reviewer and a Database reviewer are explicitly appointed.
 - Independence, scope, authority, and any conflicts are documented.
 - Each reviewer confirms the baseline commit and the exact artifacts/branches they will review.
 - Review decisions are recorded against exact SHAs, with timestamp, findings, and disposition.
 
-Required evidence: appointment record, reviewer scope, independence statement, and review decision template.  
-Exit authority: governance owner.  
-Initial status: **BLOCKED — reviewer identities not yet recorded.**
+Required evidence: appointment record, reviewer scope, independence statement, conflict declaration, and review decision template. Volunteer peer or academic candidates may be considered only after competence, identity, scope, independence, and conflict checks are documented.  \
+Exit authority: governance owner.  \
+Current status: **BLOCKED — budget unavailable; independent review requirements retained.**
 
 ### P0-RT-02 — Transaction-party model and composite-FK decisions
 
@@ -99,8 +101,9 @@ Acceptance criteria:
 - Observed state is distinguished from repository-intended state.
 - No DDL, migration, seed, backfill, or data mutation is performed.
 
-Required evidence: timestamped read-only inventory, schema/object fingerprints, migration reconciliation, and exceptions list.  
-Initial status: **NOT STARTED.**
+Required evidence: timestamped read-only inventory, schema/object fingerprints, migration reconciliation, and exceptions list.  \
+**Current status: IN PROGRESS — repository/source inventory recorded; actual runtime service/database identity, physical schema, and applied migration history remain NOT VERIFIED.**  \
+Current evidence: [P0 RT-03 Read-only Database Inventory](P0-RT-03-READONLY-DATABASE-INVENTORY-2026-11-11.md), source branch `main` at `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1`, inventory branch `audit/p0-rt03-readonly-inventory-2026-11-11`. This evidence is repository-only; it is not a live database inspection.
 
 ### P0-RT-04 — Trusted identity provenance and production RLS
 
@@ -285,6 +288,7 @@ Meeting these criteria makes the candidate eligible for a formal governance deci
 | Date | Change | Evidence |
 |---|---|---|
 | 2026-11-11 | Initial tracker created from the official P0 baseline; no implementation performed. | Tracker planning branch; baseline commit `03221982c06de2ebce23000c703baff3b1e8200b` |
+| 2026-11-11 | RT-01 blocked due to unavailable reviewer budget; independent review requirements retained. RT-03 advanced to IN PROGRESS for repository/source inventory only; physical runtime inventory remains NOT VERIFIED. Reviewer-ready evidence preparation route recorded. | [RT-03 read-only inventory report](P0-RT-03-READONLY-DATABASE-INVENTORY-2026-11-11.md); source `main` SHA `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1` |
 
 ---
 
