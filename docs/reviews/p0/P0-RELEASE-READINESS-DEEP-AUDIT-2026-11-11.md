@@ -1,5 +1,14 @@
 # P0 Release Readiness — Deep Audit
 
+
+> **OFFICIAL P0 BASELINE — EFFECTIVE FOR REMEDIATION GOVERNANCE**
+>
+> This report is designated as the controlling P0 Release Readiness baseline for `export-client-mobile-sync`, effective 2026-11-11. All subsequent P0 remediation plans, implementation branches, test reruns, evidence packages, and reviewer decisions must reference this baseline and explicitly record any superseding evidence.
+>
+> **Baseline disposition: BLOCKED — NOT RELEASE READY.** This designation establishes the governance starting point; it is not a release approval, schema freeze, security/database sign-off, merge authorization, or deployment authorization.
+>
+> **Baseline change control:** preserve this report as the immutable audit snapshot. Corrections or new findings must be recorded in a dated addendum or a new revision with source SHA, workflow run, artifact digest, scope, and reviewer decision. Do not silently rewrite historical findings. Remediation work must proceed on separate branches/PRs and must not alter `main` without explicit approval.
+
 **Audit date:** 2026-11-11  
 **Repository:** `muchlisbstg/export-client-mobile-sync`  
 **Audit base branch:** `review/p0-domain-schema-readonly-2026-11-10`  
