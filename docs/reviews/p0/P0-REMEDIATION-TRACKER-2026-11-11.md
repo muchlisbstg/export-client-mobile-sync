@@ -103,7 +103,7 @@ Acceptance criteria:
 
 Required evidence: timestamped read-only inventory, schema/object fingerprints, migration reconciliation, and exceptions list.  
 **Current status: IN PROGRESS — Vercel production Web deployment identified and Supabase staging catalog inventoried; actual Express API host/process and API-connected database remain NOT VERIFIED.**  
-Current evidence: [P0 RT-03 Read-only Database Inventory](P0-RT-03-READONLY-DATABASE-INVENTORY-2026-11-11.md). The evidence includes read-only Vercel deployment metadata and SELECT-only Supabase staging catalog queries. Supabase staging has no Export Client business schema; it is not proven to be the API-connected database. Physical integrity of the actual runtime database remains NOT VERIFIED.
+Current evidence: [P0 RT-03 Read-only Database Inventory](P0-RT-03-READONLY-DATABASE-INVENTORY-2026-11-11.md) and [P0 RT-03 Runtime Read-only Addendum](P0-RT-03-RUNTIME-READONLY-ADDENDUM-2026-11-11.md). The addendum records the Vercel Production deployment at main SHA `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1`, its zero configured project environment variables, the standalone SQLite API source contract, and SELECT-only Supabase staging catalog inventory. Supabase staging has PostgreSQL 17.11 but no Export Client business schema and is not proven to be API-connected. The actual Express API host/process/database path and physical integrity remain NOT VERIFIED.
 
 ### P0-RT-04 — Trusted identity provenance and production RLS
 
@@ -288,7 +288,7 @@ Meeting these criteria makes the candidate eligible for a formal governance deci
 | Date | Change | Evidence |
 |---|---|---|
 | 2026-11-11 | Initial tracker created from the official P0 baseline; no implementation performed. | Tracker planning branch; baseline commit `03221982c06de2ebce23000c703baff3b1e8200b` |
-| 2026-11-11 | RT-01 blocked due to unavailable reviewer budget; independent review requirements retained. RT-03 expanded with read-only Vercel production deployment metadata and live Supabase staging catalog inventory. Vercel Web deployment identified at main SHA `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1`; Express API host remains unknown. Supabase staging has PostgreSQL 17.11 in Mumbai but no Export Client business schema; staging is not proven to be API-connected. Physical runtime integrity remains NOT VERIFIED. | [RT-03 read-only inventory report](P0-RT-03-READONLY-DATABASE-INVENTORY-2026-11-11.md); staging catalog fingerprint `093732f97225a4abf3656c3285e295295bba158d7297a80de185942ce2362ded` |
+| 2026-11-11 | RT-01 blocked due to unavailable reviewer budget; independent review requirements retained. RT-03 expanded with read-only Vercel production deployment metadata and live Supabase staging catalog inventory. Vercel Web deployment identified at main SHA `0a3c595c6697f56d0cef8536c3b93c3886cc5ab1`; Express API host remains unknown. Supabase staging has PostgreSQL 17.11 in Mumbai but no Export Client business schema; staging is not proven to be API-connected. Physical runtime integrity remains NOT VERIFIED. | [RT-03 read-only inventory report](P0-RT-03-READONLY-DATABASE-INVENTORY-2026-11-11.md); staging catalog canonical schema SHA-256 `4b8766e34c456286a0904c6a9df0058cd1c5341a39f9a727c85bfa182b39c520`; see runtime addendum |
 
 ---
 
