@@ -29,8 +29,6 @@ jobs:
           cache: npm
       - name: Install Expo SDK declared in manifest
         run: npm install --no-audit --no-fund
-      - name: Apply Expo SDK-compatible dependency versions
-        run: npx expo install --fix
       - name: Regenerate npm lockfile
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Verify clean lockfile installation
