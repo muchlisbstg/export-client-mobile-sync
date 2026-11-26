@@ -1,0 +1,51 @@
+name: Regenerate Expo SDK 58 dependency lock
+
+on:
+  push:
+    branches:
+      - fix/react-react-dom-peer-alignment
+
+permissions:
+  contents: write
+
+concurrency:
+  group: expo-sdk58-lock-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Expo SDK declared in manifest
+        run: npm install --no-audit --no-fund
+      - name: Apply Expo SDK-compatible dependency versions
+        run: npx expo install --fix
+      - name: Regenerate npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Verify clean lockfile installation
+        run: npm ci
+      - name: Verify Expo dependency compatibility
+        run: npx expo install --check
+      - name: Commit generated dependency manifest and lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency or lockfile changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(mobile): regenerate Expo SDK 58 dependency lock"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
